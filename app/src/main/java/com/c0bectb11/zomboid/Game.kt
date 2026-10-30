@@ -1,0 +1,645 @@
+package com.c0bectb11.zomboid
+
+import android.util.Base64
+import org.json.JSONArray
+import org.json.JSONObject
+import kotlin.math.atan2
+import kotlin.math.cos
+import kotlin.math.floor
+import kotlin.math.hypot
+import kotlin.math.sin
+import kotlin.math.sqrt
+import kotlin.random.Random
+
+class Player(var id: Int) {
+    var x = 0f; var y = 0f
+    var fx = 1f; var fy = 0f          // направление взгляда
+    var hp = 100f
+    var hunger = 10f                   // 0 — сыт, 100 — смерть от голода
+    var thirst = 10f
+    var stamina = 100f
+    var bleeding = false
+    var infection = 0f                 // секунды с момента укуса, 0 — здоров
+    var dead = false
+    var kills = 0
+    var eq: String? = null
+    val inv = ArrayList<Stack>()
+    // ввод
+    var mx = 0f; var my = 0f; var run = false
+    var cooldown = 0f
+    var connected = true
+    // отрисовка у клиента
+    var rx = 0f; var ry = 0f
+    var attackAnim = 0f
+
+    fun weapon(): ItemDef = eq?.let { Items.get(it) } ?: Items.FISTS
+    fun weight(): Float = inv.sumOf { (it.def.weight * it.n).toDouble() }.toFloat()
+    fun count(id: String) = inv.firstOrNull { it.id == id }?.n ?: 0
+    fun take(id: String, n: Int = 1): Boolean {
+        val s = inv.firstOrNull { it.id == id } ?: return false
+        if (s.n < n) return false
+        s.n -= n
+        if (s.n <= 0) { inv.remove(s); if (eq == id) eq = null }
+        return true
+    }
+}
+
+class Zombie(val id: Int) {
+    var x = 0f; var y = 0f
+    var fx = 0f; var fy = 1f
+    var hp = 100f
+    var chase = 0f                    // таймер преследования
+    var tx = Float.NaN; var ty = Float.NaN   // точка, куда идти на шум
+    var wanderT = 0f; var wx = 0f; var wy = 0f
+    var senseT = 0f
+    var attackCd = 0f
+    var stagger = 0f
+    var bashT = 0f
+    var speed = 1f
+    // отрисовка
+    var rx = 0f; var ry = 0f
+    var anim = Random.nextFloat() * 10f
+    var seen = false
+}
+
+class Corpse(val x: Float, val y: Float, val zombie: Boolean)
+
+sealed class Act {
+    object Attack : Act()
+    class Interact(val cell: Int) : Act()
+    class Barricade(val cell: Int) : Act()
+    class Use(val id: String) : Act()
+    class Drop(val id: String) : Act()
+    class Take(val cell: Int, val id: String) : Act()
+    class Put(val cell: Int, val id: String) : Act()
+}
+
+class Game(val seed: Long) {
+    val world = World(100, 100)
+    val players = ArrayList<Player>()
+    val zombies = ArrayList<Zombie>()
+    val corpses = ArrayList<Corpse>()
+    var time = 8 * 60f                // игровые минуты с начала (день 1, 08:00)
+    val rnd = Random(seed xor System.nanoTime())
+    private var nextZid = 1
+    private var flowT = 0f
+    var isReplica = false             // клиент: не симулирует, только принимает снимки
+    val actions = java.util.concurrent.ConcurrentLinkedQueue<Pair<Int, Act>>()
+    val messages = HashMap<Int, MutableList<String>>()
+    val shots = ArrayList<FloatArray>()   // вспышки выстрелов для отрисовки [x1,y1,x2,y2,t]
+
+    companion object {
+        const val PLAYER_R = 0.3f
+        const val ZOMBIE_R = 0.3f
+        const val MAX_WEIGHT = 15f
+        const val MINUTES_PER_SEC = 1f   // 1 сек = 1 игровая минута, сутки = 24 мин
+
+        fun newGame(seed: Long): Game {
+            val g = Game(seed)
+            val (sx, sy) = g.world.generate(seed)
+            val p = Player(0); p.x = sx; p.y = sy
+            p.inv.add(Stack("water", 1)); p.inv.add(Stack("chips", 1)); p.inv.add(Stack("bandage", 1))
+            g.players.add(p)
+            g.spawnZombies(140, sx, sy)
+            return g
+        }
+    }
+
+    fun day(): Int = (time / 1440f).toInt() + 1
+    fun hourF(): Float = (time % 1440f) / 60f
+    fun clock(): String { val m = (time % 1440f).toInt(); return "%02d:%02d".format(m / 60, m % 60) }
+
+    /** 0 — светло, 1 — глубокая ночь */
+    fun darkness(): Float {
+        val h = hourF()
+        return when {
+            h < 5f -> 1f
+            h < 7f -> 1f - (h - 5f) / 2f
+            h < 19f -> 0f
+            h < 21.5f -> (h - 19f) / 2.5f
+            else -> 1f
+        }
+    }
+
+    fun player(id: Int) = players.firstOrNull { it.id == id }
+
+    fun msg(pid: Int, text: String) { messages.getOrPut(pid) { ArrayList() }.add(text) }
+
+    fun spawnZombies(n: Int, avoidX: Float, avoidY: Float) {
+        var tries = 0; var made = 0
+        while (made < n && tries < n * 50) {
+            tries++
+            val x = rnd.nextInt(world.w) + 0.5f; val y = rnd.nextInt(world.h) + 0.5f
+            if (hypot(x - avoidX, y - avoidY) < 16f) continue
+            if (world.circleBlocked(x, y, ZOMBIE_R)) continue
+            val z = Zombie(nextZid++); z.x = x; z.y = y; z.rx = x; z.ry = y
+            z.speed = 0.85f + rnd.nextFloat() * 0.45f
+            z.hp = 80f + rnd.nextFloat() * 50f
+            zombies.add(z); made++
+        }
+    }
+
+    fun addPlayer(id: Int): Player {
+        player(id)?.let { it.connected = true; return it }
+        val host = players.firstOrNull()
+        val p = Player(id)
+        p.x = (host?.x ?: 50f) + 0.6f; p.y = host?.y ?: 50f
+        if (world.circleBlocked(p.x, p.y, PLAYER_R)) { p.x = host?.x ?: 50f; p.y = host?.y ?: 50f }
+        p.inv.add(Stack("water", 1)); p.inv.add(Stack("bandage", 1))
+        players.add(p)
+        return p
+    }
+
+    // ================== СИМУЛЯЦИЯ ==================
+    fun update(dt: Float) {
+        if (isReplica) return
+        while (true) {
+            val (pid, a) = actions.poll() ?: break
+            val p = player(pid) ?: continue
+            if (!p.dead) doAction(p, a)
+        }
+        time += dt * MINUTES_PER_SEC
+        for (p in players) updatePlayer(p, dt)
+        flowT -= dt
+        if (flowT <= 0f) {
+            flowT = 0.5f
+            world.computeFlow(players.filter { !it.dead && it.connected }.map { floor(it.x).toInt() to floor(it.y).toInt() })
+        }
+        for (z in zombies) updateZombie(z, dt)
+        separate()
+        val it = zombies.iterator()
+        while (it.hasNext()) {
+            val z = it.next()
+            if (z.hp <= 0f) { it.remove(); corpses.add(Corpse(z.x, z.y, true)); if (corpses.size > 80) corpses.removeAt(0) }
+        }
+        shots.removeAll { it[4] <= 0f }
+        for (s in shots) s[4] -= dt
+        // медленный прирост зомби, чтобы город не пустел
+        val p0 = players.firstOrNull()
+        if (p0 != null && zombies.size < 110 && rnd.nextFloat() < dt * 0.05f) spawnZombies(1, p0.x, p0.y)
+    }
+
+    private fun updatePlayer(p: Player, dt: Float) {
+        if (p.dead || !p.connected) return
+        p.cooldown -= dt
+        p.attackAnim = (p.attackAnim - dt * 4f).coerceAtLeast(0f)
+        val mag = hypot(p.mx, p.my)
+        val heavy = p.weight() > MAX_WEIGHT
+        var running = p.run && p.stamina > 1f && mag > 0.1f
+        var speed = 2.3f
+        if (running) speed = 3.9f
+        if (heavy) { speed *= 0.6f; running = false }
+        if (p.stamina < 10f) speed *= 0.8f
+        val cell = world.tAt(world.idx(floor(p.x).toInt().coerceIn(0, world.w - 1), floor(p.y).toInt().coerceIn(0, world.h - 1)))
+        if (cell == T.WINDOW_BROKEN) speed *= 0.4f
+        if (mag > 0.1f) {
+            val nx = p.mx / maxOf(1f, mag); val ny = p.my / maxOf(1f, mag)
+            p.fx = p.mx / mag; p.fy = p.my / mag
+            moveCircle(p.x, p.y, nx * speed * dt, ny * speed * dt, PLAYER_R) { x, y -> p.x = x; p.y = y }
+            if (running) {
+                p.stamina -= dt * 12f
+                if (rnd.nextFloat() < dt * 1.2f) noise(p.x, p.y, 6f, p)
+            }
+        }
+        if (!running) p.stamina = (p.stamina + dt * (if (mag > 0.1f) 6f else 12f)).coerceAtMost(100f)
+        // голод и жажда (полная шкала за ~2 и ~1.3 игровых дня)
+        p.hunger = (p.hunger + dt * 0.035f).coerceAtMost(100f)
+        p.thirst = (p.thirst + dt * 0.052f).coerceAtMost(100f)
+        if (p.hunger >= 90f || p.thirst >= 90f) p.hp -= dt * 0.4f
+        else if (p.hunger < 60f && p.thirst < 60f && !p.bleeding && p.infection <= 0f) p.hp = (p.hp + dt * 0.08f).coerceAtMost(100f)
+        if (p.bleeding) p.hp -= dt * 0.35f
+        if (p.infection > 0f) {
+            p.infection += dt
+            if (p.infection > 900f) p.hp -= dt * 0.25f
+            if (p.infection.toInt() == 420 && p.infection - dt < 420f) msg(p.id, "Тебя знобит. Укус даёт о себе знать…")
+        }
+        if (p.hp <= 0f) {
+            p.hp = 0f; p.dead = true
+            corpses.add(Corpse(p.x, p.y, false))
+            msg(p.id, "Ты погиб. Прожито дней: ${day() - 1}")
+        }
+    }
+
+    inline fun moveCircle(x: Float, y: Float, dx: Float, dy: Float, r: Float, set: (Float, Float) -> Unit) {
+        var nx = x; var ny = y
+        if (!world.circleBlocked(nx + dx, ny, r)) nx += dx
+        if (!world.circleBlocked(nx, ny + dy, r)) ny += dy
+        set(nx, ny)
+    }
+
+    fun noise(x: Float, y: Float, radius: Float, src: Player?) {
+        for (z in zombies) {
+            val d = hypot(z.x - x, z.y - y)
+            if (d > radius) continue
+            if (src != null && d < radius * 0.6f) z.chase = maxOf(z.chase, 6f)
+            z.tx = x + (rnd.nextFloat() - 0.5f) * 2f; z.ty = y + (rnd.nextFloat() - 0.5f) * 2f
+        }
+    }
+
+    private fun updateZombie(z: Zombie, dt: Float) {
+        z.attackCd -= dt; z.anim += dt
+        if (z.stagger > 0f) { z.stagger -= dt; return }
+        // активна только рядом с игроками — дальние бродят реже
+        val near = players.filter { !it.dead && it.connected }.minByOrNull { hypot(it.x - z.x, it.y - z.y) }
+        val nd = if (near != null) hypot(near.x - z.x, near.y - z.y) else 999f
+        // чувства
+        z.senseT -= dt
+        if (z.senseT <= 0f && near != null && nd < 22f) {
+            z.senseT = 0.3f
+            val dark = darkness()
+            val sight = 11f - 6f * dark
+            if (nd < sight && world.los(z.x, z.y, near.x, near.y)) {
+                // смотрит ли зомби в сторону игрока (или игрок очень близко)
+                val dot = ((near.x - z.x) * z.fx + (near.y - z.y) * z.fy) / maxOf(nd, 0.01f)
+                if (dot > -0.2f || nd < 3f || z.chase > 0f) z.chase = 10f
+            }
+        }
+        var speed = 0.9f * z.speed
+        var gx = 0f; var gy = 0f
+        if (z.chase > 0f && near != null) {
+            z.chase -= dt
+            speed = 1.25f * z.speed
+            if (nd < 1.6f && world.los(z.x, z.y, near.x, near.y)) {
+                gx = near.x - z.x; gy = near.y - z.y
+            } else {
+                val cx = floor(z.x).toInt(); val cy = floor(z.y).toInt()
+                var best = world.flow.getOrElse(world.idx(cx.coerceIn(0, world.w - 1), cy.coerceIn(0, world.h - 1))) { Int.MAX_VALUE }
+                var bi = -1
+                for (k in 0 until 4) {
+                    val nx = cx + World.DX4[k]; val ny = cy + World.DY4[k]
+                    if (!world.inside(nx, ny)) continue
+                    val f = world.flow[world.idx(nx, ny)]
+                    if (f < best) { best = f; bi = world.idx(nx, ny) }
+                }
+                if (bi >= 0) {
+                    val bx = bi % world.w + 0.5f; val by = bi / world.w + 0.5f
+                    if (world.bashable(bi) && hypot(bx - z.x, by - z.y) < 1.05f) {
+                        bash(z, bi, dt); z.fx = bx - z.x; z.fy = by - z.y; normFacing(z); return
+                    }
+                    gx = bx - z.x; gy = by - z.y
+                } else { gx = near.x - z.x; gy = near.y - z.y }
+            }
+            if (nd < 0.8f && z.attackCd <= 0f) attackPlayer(z, near)
+        } else if (!z.tx.isNaN()) {
+            gx = z.tx - z.x; gy = z.ty - z.y
+            if (hypot(gx, gy) < 0.6f) { z.tx = Float.NaN; z.ty = Float.NaN }
+        } else {
+            if (nd > 40f && rnd.nextFloat() > 0.3f) return   // далёкие экономят процессор
+            z.wanderT -= dt
+            if (z.wanderT <= 0f) {
+                z.wanderT = 2f + rnd.nextFloat() * 5f
+                if (rnd.nextFloat() < 0.35f) { z.wx = 0f; z.wy = 0f } else {
+                    val a = rnd.nextFloat() * 6.283f; z.wx = cos(a); z.wy = sin(a)
+                }
+            }
+            gx = z.wx; gy = z.wy; speed = 0.35f * z.speed
+        }
+        val gl = hypot(gx, gy)
+        if (gl > 0.01f) {
+            z.fx = gx / gl; z.fy = gy / gl
+            val before = z.x + z.y
+            moveCircle(z.x, z.y, z.fx * speed * dt, z.fy * speed * dt, ZOMBIE_R) { x, y -> z.x = x; z.y = y }
+            if (z.x + z.y == before && z.chase <= 0f) z.wanderT = 0f
+        }
+    }
+
+    private fun normFacing(z: Zombie) { val l = hypot(z.fx, z.fy); if (l > 0f) { z.fx /= l; z.fy /= l } }
+
+    private fun bash(z: Zombie, cell: Int, dt: Float) {
+        z.bashT -= dt
+        if (z.bashT > 0f) return
+        z.bashT = 1.4f
+        val hp = (world.tileHp[cell] ?: 60f) - (6f + rnd.nextFloat() * 6f)
+        noise(cell % world.w + 0.5f, cell / world.w + 0.5f, 7f, null)
+        if (hp > 0f) { world.tileHp[cell] = hp; return }
+        val b = world.barrAt(cell)
+        if (b > 0) {
+            if (b == 1) world.barr.remove(cell) else world.barr[cell] = b - 1
+            world.tileHp[cell] = 80f
+        } else {
+            when (world.tAt(cell)) {
+                T.DOOR -> world.setIdx(cell, T.DOOR_BROKEN)
+                T.WINDOW -> world.setIdx(cell, T.WINDOW_BROKEN)
+            }
+            world.tileHp.remove(cell)
+        }
+        world.dirtyTiles.add(cell)
+    }
+
+    private fun attackPlayer(z: Zombie, p: Player) {
+        z.attackCd = 1.3f
+        if (rnd.nextFloat() > 0.55f) return
+        p.hp -= 6f + rnd.nextFloat() * 7f
+        val r = rnd.nextFloat()
+        when {
+            r < 0.05f && p.infection <= 0f -> { p.infection = 0.01f; p.bleeding = true; msg(p.id, "Укус! Рана кровоточит") }
+            r < 0.30f && !p.bleeding -> { p.bleeding = true; msg(p.id, "Глубокая царапина — кровотечение") }
+        }
+    }
+
+    private fun separate() {
+        val n = zombies.size
+        for (i in 0 until n) {
+            val a = zombies[i]
+            for (j in i + 1 until n) {
+                val b = zombies[j]
+                val dx = b.x - a.x; val dy = b.y - a.y
+                if (dx > 0.6f || dx < -0.6f || dy > 0.6f || dy < -0.6f) continue
+                val d = sqrt(dx * dx + dy * dy)
+                if (d < 0.55f && d > 0.0001f) {
+                    val push = (0.55f - d) * 0.5f
+                    val ux = dx / d * push; val uy = dy / d * push
+                    if (!world.circleBlocked(a.x - ux, a.y - uy, ZOMBIE_R)) { a.x -= ux; a.y -= uy }
+                    if (!world.circleBlocked(b.x + ux, b.y + uy, ZOMBIE_R)) { b.x += ux; b.y += uy }
+                }
+            }
+        }
+    }
+
+    // ================== ДЕЙСТВИЯ ==================
+    private fun doAction(p: Player, a: Act) {
+        when (a) {
+            is Act.Attack -> attack(p)
+            is Act.Interact -> interact(p, a.cell)
+            is Act.Barricade -> barricade(p, a.cell)
+            is Act.Use -> use(p, a.id)
+            is Act.Drop -> {
+                val s = p.inv.firstOrNull { it.id == a.id } ?: return
+                p.inv.remove(s); if (p.eq == s.id) p.eq = null
+                val cell = world.idx(floor(p.x).toInt(), floor(p.y).toInt())
+                val list = world.containers.getOrPut(cell) { ArrayList() }
+                World.addTo(list, s.id, s.n); world.dirtyCont.add(cell)
+            }
+            is Act.Take -> {
+                if (!nearCell(p, a.cell, 1.8f)) return
+                val list = world.containers[a.cell] ?: return
+                val s = list.firstOrNull { it.id == a.id } ?: return
+                list.remove(s); World.addTo(p.inv, s.id, s.n); world.dirtyCont.add(a.cell)
+                if (p.weight() > MAX_WEIGHT) msg(p.id, "Слишком тяжело — ты замедлился")
+            }
+            is Act.Put -> {
+                if (!nearCell(p, a.cell, 1.8f)) return
+                val s = p.inv.firstOrNull { it.id == a.id } ?: return
+                p.inv.remove(s); if (p.eq == s.id) p.eq = null
+                World.addTo(world.containers.getOrPut(a.cell) { ArrayList() }, s.id, s.n); world.dirtyCont.add(a.cell)
+            }
+        }
+    }
+
+    fun nearCell(p: Player, cell: Int, dist: Float): Boolean {
+        val cx = cell % world.w + 0.5f; val cy = cell / world.w + 0.5f
+        return hypot(cx - p.x, cy - p.y) < dist
+    }
+
+    private fun attack(p: Player) {
+        if (p.cooldown > 0f) return
+        val w = p.weapon()
+        p.cooldown = w.cooldown
+        p.attackAnim = 1f
+        if (w.kind == ItemKind.GUN) {
+            if (!p.take("ammo", 1)) { msg(p.id, "Нет патронов"); p.cooldown = 0.3f; return }
+            val target = zombies.filter { hypot(it.x - p.x, it.y - p.y) < w.range && world.los(p.x, p.y, it.x, it.y) }
+                .minByOrNull { val d = hypot(it.x - p.x, it.y - p.y); d - 3f * (((it.x - p.x) * p.fx + (it.y - p.y) * p.fy) / maxOf(d, 0.01f)) }
+            var ex = p.x + p.fx * w.range; var ey = p.y + p.fy * w.range
+            if (target != null) {
+                val d = hypot(target.x - p.x, target.y - p.y)
+                p.fx = (target.x - p.x) / d; p.fy = (target.y - p.y) / d
+                ex = target.x; ey = target.y
+                if (rnd.nextFloat() < 0.85f - d * 0.02f) hitZombie(p, target, w.dmg * (0.8f + rnd.nextFloat() * 0.4f))
+            }
+            shots.add(floatArrayOf(p.x + p.fx * 0.4f, p.y + p.fy * 0.4f, ex, ey, 0.08f))
+            noise(p.x, p.y, w.noise, p)
+            return
+        }
+        p.stamina = (p.stamina - 4f).coerceAtLeast(0f)
+        val reach = w.range + ZOMBIE_R
+        val cands = zombies.filter { hypot(it.x - p.x, it.y - p.y) < reach }
+        var target = cands.filter {
+            val d = hypot(it.x - p.x, it.y - p.y)
+            ((it.x - p.x) * p.fx + (it.y - p.y) * p.fy) / maxOf(d, 0.01f) > 0.35f
+        }.minByOrNull { hypot(it.x - p.x, it.y - p.y) }
+        if (target == null) target = cands.minByOrNull { hypot(it.x - p.x, it.y - p.y) }
+        val tz = target
+        if (tz != null) {
+            val d = maxOf(hypot(tz.x - p.x, tz.y - p.y), 0.01f)
+            p.fx = (tz.x - p.x) / d; p.fy = (tz.y - p.y) / d
+            val weak = if (p.stamina < 10f) 0.6f else 1f
+            hitZombie(p, tz, w.dmg * weak * (0.8f + rnd.nextFloat() * 0.4f))
+            moveCircle(tz.x, tz.y, p.fx * 0.35f, p.fy * 0.35f, ZOMBIE_R) { x, y -> tz.x = x; tz.y = y }
+            tz.stagger = 0.45f
+        }
+        noise(p.x, p.y, w.noise, p)
+    }
+
+    private fun hitZombie(p: Player, z: Zombie, dmg: Float) {
+        z.hp -= dmg
+        z.chase = 10f
+        if (z.hp <= 0f) p.kills++
+    }
+
+    private fun interact(p: Player, cell: Int) {
+        if (cell < 0 || cell >= world.tiles.size || !nearCell(p, cell, 1.8f)) return
+        val t = world.tAt(cell)
+        when {
+            world.barrAt(cell) > 0 -> msg(p.id, "Заколочено")
+            t == T.DOOR -> { world.setIdx(cell, T.DOOR_OPEN); noise(p.x, p.y, 3f, p) }
+            t == T.DOOR_OPEN -> {
+                val cx = cell % world.w + 0.5f; val cy = cell / world.w + 0.5f
+                val blocked = players.any { !it.dead && hypot(it.x - cx, it.y - cy) < 0.8f } || zombies.any { hypot(it.x - cx, it.y - cy) < 0.8f }
+                if (blocked) msg(p.id, "Что-то мешает закрыть") else { world.setIdx(cell, T.DOOR); noise(p.x, p.y, 3f, p) }
+            }
+            t == T.WINDOW -> { world.setIdx(cell, T.WINDOW_BROKEN); world.tileHp.remove(cell); noise(p.x, p.y, 12f, p); msg(p.id, "Ты разбил окно") }
+            T.isFurniture(t) || world.containers.containsKey(cell) -> world.openContainer(cell, rnd)
+        }
+    }
+
+    fun canBarricade(p: Player, cell: Int): Boolean {
+        if (cell < 0) return false
+        val t = world.tAt(cell)
+        val okTile = t == T.DOOR || t == T.DOOR_BROKEN || T.isWindowLike(t)
+        return okTile && world.barrAt(cell) < 3 && p.count("hammer") > 0 && p.count("planks") > 0
+    }
+
+    private fun barricade(p: Player, cell: Int) {
+        if (!nearCell(p, cell, 1.8f) || !canBarricade(p, cell)) return
+        val cx = cell % world.w + 0.5f; val cy = cell / world.w + 0.5f
+        if (players.any { !it.dead && hypot(it.x - cx, it.y - cy) < 0.75f }) { msg(p.id, "Отойди от проёма"); return }
+        p.take("planks", 1)
+        world.barr[cell] = world.barrAt(cell) + 1
+        world.tileHp[cell] = 80f
+        world.dirtyTiles.add(cell)
+        noise(p.x, p.y, 9f, p)
+        msg(p.id, "Баррикада: ${world.barrAt(cell)}/3")
+    }
+
+    private fun use(p: Player, id: String) {
+        val d = Items.get(id)
+        if (p.count(id) <= 0) return
+        when (d.kind) {
+            ItemKind.FOOD, ItemKind.DRINK -> {
+                p.take(id)
+                p.hunger = (p.hunger - d.hunger).coerceIn(0f, 100f)
+                p.thirst = (p.thirst - d.thirst).coerceIn(0f, 100f)
+            }
+            ItemKind.MED -> {
+                p.take(id)
+                p.hp = (p.hp + d.heal).coerceAtMost(100f)
+                if (d.stopsBleeding && p.bleeding) { p.bleeding = false; msg(p.id, "Рана перевязана") }
+            }
+            ItemKind.MELEE, ItemKind.GUN -> p.eq = if (p.eq == id) null else id
+            else -> {}
+        }
+    }
+
+    // ================== ПОИСК ЦЕЛИ ДЛЯ КНОПКИ «ДЕЙСТВИЕ» ==================
+    fun findInteract(p: Player): Int {
+        var best = -1; var bestD = 9f
+        val px = floor(p.x).toInt(); val py = floor(p.y).toInt()
+        for (y in py - 1..py + 1) for (x in px - 1..px + 1) {
+            if (!world.inside(x, y)) continue
+            val i = world.idx(x, y)
+            val t = world.tAt(i)
+            val useful = T.isFurniture(t) || t == T.DOOR || t == T.DOOR_OPEN || t == T.WINDOW ||
+                (world.containers[i]?.isNotEmpty() == true)
+            if (!useful) continue
+            val cx = x + 0.5f; val cy = y + 0.5f
+            var d = hypot(cx - p.x, cy - p.y)
+            if (d > 1.6f) continue
+            d -= 0.4f * ((cx - p.x) * p.fx + (cy - p.y) * p.fy) / maxOf(d, 0.01f)
+            if (d < bestD) { bestD = d; best = i }
+        }
+        return best
+    }
+
+    fun findBarricade(p: Player): Int {
+        var best = -1; var bestD = 9f
+        val px = floor(p.x).toInt(); val py = floor(p.y).toInt()
+        for (y in py - 1..py + 1) for (x in px - 1..px + 1) {
+            if (!world.inside(x, y)) continue
+            val i = world.idx(x, y)
+            if (!canBarricade(p, i)) continue
+            val d = hypot(x + 0.5f - p.x, y + 0.5f - p.y)
+            if (d < 1.6f && d < bestD) { bestD = d; best = i }
+        }
+        return best
+    }
+
+    // ================== СОХРАНЕНИЕ ==================
+    fun invJson(list: List<Stack>): JSONArray { val a = JSONArray(); for (s in list) a.put(JSONArray().put(s.id).put(s.n)); return a }
+    fun invFrom(a: JSONArray?, to: MutableList<Stack>) { to.clear(); if (a == null) return; for (i in 0 until a.length()) { val e = a.getJSONArray(i); to.add(Stack(e.getString(0), e.getInt(1))) } }
+
+    fun playerJson(p: Player): JSONObject = JSONObject().apply {
+        put("id", p.id); put("x", r2(p.x)); put("y", r2(p.y)); put("fx", r2(p.fx)); put("fy", r2(p.fy))
+        put("hp", r2(p.hp)); put("hu", r2(p.hunger)); put("th", r2(p.thirst)); put("st", r2(p.stamina))
+        put("bl", p.bleeding); put("inf", r2(p.infection)); put("dead", p.dead); put("k", p.kills)
+        put("eq", p.eq ?: ""); put("inv", invJson(p.inv)); put("aa", r2(p.attackAnim)); put("con", p.connected)
+    }
+
+    fun playerFrom(o: JSONObject, p: Player) {
+        p.x = o.getDouble("x").toFloat(); p.y = o.getDouble("y").toFloat()
+        p.fx = o.getDouble("fx").toFloat(); p.fy = o.getDouble("fy").toFloat()
+        p.hp = o.getDouble("hp").toFloat(); p.hunger = o.getDouble("hu").toFloat(); p.thirst = o.getDouble("th").toFloat()
+        p.stamina = o.getDouble("st").toFloat(); p.bleeding = o.getBoolean("bl"); p.infection = o.getDouble("inf").toFloat()
+        p.dead = o.getBoolean("dead"); p.kills = o.optInt("k"); p.eq = o.optString("eq").ifEmpty { null }
+        invFrom(o.optJSONArray("inv"), p.inv); p.attackAnim = o.optDouble("aa", 0.0).toFloat()
+        p.connected = o.optBoolean("con", true)
+    }
+
+    private fun r2(f: Float): Double = Math.round(f * 100.0) / 100.0
+
+    fun toJson(): JSONObject {
+        val o = JSONObject()
+        o.put("v", 1); o.put("seed", seed); o.put("time", time.toDouble())
+        o.put("tiles", Base64.encodeToString(world.tiles, Base64.NO_WRAP))
+        val hp = JSONArray(); for ((k, v) in world.tileHp) hp.put(JSONArray().put(k).put(v.toDouble())); o.put("thp", hp)
+        val ba = JSONArray(); for ((k, v) in world.barr) ba.put(JSONArray().put(k).put(v)); o.put("barr", ba)
+        val co = JSONObject(); for ((k, v) in world.containers) co.put(k.toString(), invJson(v)); o.put("cont", co)
+        val zs = JSONArray(); for (z in zombies) zs.put(JSONArray().put(z.id).put(r2(z.x)).put(r2(z.y)).put(r2(z.hp))); o.put("z", zs)
+        val ps = JSONArray(); for (p in players) ps.put(playerJson(p)); o.put("p", ps)
+        val cs = JSONArray(); for (c in corpses) cs.put(JSONArray().put(r2(c.x)).put(r2(c.y)).put(c.zombie)); o.put("corpses", cs)
+        return o
+    }
+
+    fun loadJson(o: JSONObject) {
+        time = o.getDouble("time").toFloat()
+        val t = Base64.decode(o.getString("tiles"), Base64.NO_WRAP)
+        System.arraycopy(t, 0, world.tiles, 0, minOf(t.size, world.tiles.size))
+        world.tileHp.clear(); o.optJSONArray("thp")?.let { for (i in 0 until it.length()) { val e = it.getJSONArray(i); world.tileHp[e.getInt(0)] = e.getDouble(1).toFloat() } }
+        world.barr.clear(); o.optJSONArray("barr")?.let { for (i in 0 until it.length()) { val e = it.getJSONArray(i); world.barr[e.getInt(0)] = e.getInt(1) } }
+        world.containers.clear()
+        o.optJSONObject("cont")?.let { co -> for (k in co.keys()) { val l = ArrayList<Stack>(); invFrom(co.getJSONArray(k), l); world.containers[k.toInt()] = l } }
+        zombies.clear()
+        o.optJSONArray("z")?.let { for (i in 0 until it.length()) {
+            val e = it.getJSONArray(i); val z = Zombie(e.getInt(0))
+            z.x = e.getDouble(1).toFloat(); z.y = e.getDouble(2).toFloat(); z.hp = e.getDouble(3).toFloat()
+            z.rx = z.x; z.ry = z.y; z.speed = 0.85f + rnd.nextFloat() * 0.45f
+            zombies.add(z); nextZid = maxOf(nextZid, z.id + 1)
+        } }
+        players.clear()
+        o.optJSONArray("p")?.let { for (i in 0 until it.length()) {
+            val e = it.getJSONObject(i); val p = Player(e.getInt("id")); playerFrom(e, p); p.rx = p.x; p.ry = p.y; players.add(p)
+        } }
+        corpses.clear()
+        o.optJSONArray("corpses")?.let { for (i in 0 until it.length()) { val e = it.getJSONArray(i); corpses.add(Corpse(e.getDouble(0).toFloat(), e.getDouble(1).toFloat(), e.getBoolean(2))) } }
+    }
+
+    // ================== СЕТЕВЫЕ СНИМКИ ==================
+    /** Снимок для клиента: позиции, изменения клеток и контейнеров */
+    fun snapshot(forPid: Int): JSONObject {
+        val o = JSONObject()
+        o.put("t", "snap"); o.put("time", time.toDouble())
+        val ps = JSONArray(); for (p in players) ps.put(playerJson(p)); o.put("p", ps)
+        val zs = JSONArray()
+        for (z in zombies) zs.put(JSONArray().put(z.id).put(r2(z.x)).put(r2(z.y)).put(r2(z.fx)).put(r2(z.fy)).put(if (z.chase > 0f) 1 else 0))
+        o.put("z", zs)
+        if (world.dirtyTiles.isNotEmpty()) {
+            val a = JSONArray(); for (i in world.dirtyTiles) a.put(JSONArray().put(i).put(world.tAt(i)).put(world.barrAt(i))); o.put("tc", a)
+            world.dirtyTiles.clear()
+        }
+        if (world.dirtyCont.isNotEmpty()) {
+            val co = JSONObject(); for (i in world.dirtyCont) co.put(i.toString(), invJson(world.containers[i] ?: emptyList())); o.put("cc", co)
+            world.dirtyCont.clear()
+        }
+        messages.remove(forPid)?.let { m -> val a = JSONArray(); m.forEach { a.put(it) }; o.put("m", a) }
+        if (shots.isNotEmpty()) { val a = JSONArray(); for (s in shots) a.put(JSONArray().put(r2(s[0])).put(r2(s[1])).put(r2(s[2])).put(r2(s[3]))); o.put("sh", a) }
+        val newCorpses = JSONArray(); for (c in corpses.takeLast(80)) newCorpses.put(JSONArray().put(r2(c.x)).put(r2(c.y)).put(c.zombie)); o.put("cp", newCorpses)
+        return o
+    }
+
+    fun applySnapshot(o: JSONObject, localPid: Int, onMsg: (String) -> Unit) {
+        time = o.getDouble("time").toFloat()
+        val ps = o.getJSONArray("p")
+        for (i in 0 until ps.length()) {
+            val e = ps.getJSONObject(i)
+            val id = e.getInt("id")
+            val p = player(id) ?: Player(id).also { pl -> pl.x = e.getDouble("x").toFloat(); pl.y = e.getDouble("y").toFloat(); pl.rx = pl.x; pl.ry = pl.y; players.add(pl) }
+            playerFrom(e, p)
+        }
+        val zs = o.getJSONArray("z")
+        val byId = HashMap<Int, Zombie>(zombies.size * 2); for (z in zombies) byId[z.id] = z
+        val next = ArrayList<Zombie>(zs.length())
+        for (i in 0 until zs.length()) {
+            val e = zs.getJSONArray(i); val id = e.getInt(0)
+            val z = byId[id] ?: Zombie(id).also { it.rx = e.getDouble(1).toFloat(); it.ry = e.getDouble(2).toFloat() }
+            z.x = e.getDouble(1).toFloat(); z.y = e.getDouble(2).toFloat()
+            z.fx = e.getDouble(3).toFloat(); z.fy = e.getDouble(4).toFloat(); z.chase = e.getInt(5).toFloat()
+            next.add(z)
+        }
+        zombies.clear(); zombies.addAll(next)
+        o.optJSONArray("tc")?.let { for (i in 0 until it.length()) {
+            val e = it.getJSONArray(i); val idx = e.getInt(0)
+            world.tiles[idx] = e.getInt(1).toByte()
+            val b = e.getInt(2); if (b > 0) world.barr[idx] = b else world.barr.remove(idx)
+        } }
+        o.optJSONObject("cc")?.let { co -> for (k in co.keys()) { val l = ArrayList<Stack>(); invFrom(co.getJSONArray(k), l); world.containers[k.toInt()] = l } }
+        o.optJSONArray("m")?.let { for (i in 0 until it.length()) onMsg(it.getString(i)) }
+        o.optJSONArray("sh")?.let { for (i in 0 until it.length()) { val e = it.getJSONArray(i); shots.add(floatArrayOf(e.getDouble(0).toFloat(), e.getDouble(1).toFloat(), e.getDouble(2).toFloat(), e.getDouble(3).toFloat(), 0.08f)) } }
+        o.optJSONArray("cp")?.let { corpses.clear(); for (i in 0 until it.length()) { val e = it.getJSONArray(i); corpses.add(Corpse(e.getDouble(0).toFloat(), e.getDouble(1).toFloat(), e.getBoolean(2))) } }
+    }
+
+    /** Клиент: старение вспышек выстрелов без симуляции */
+    fun tickReplica(dt: Float) {
+        shots.removeAll { it[4] <= 0f }
+        for (s in shots) s[4] -= dt
+    }
+}
