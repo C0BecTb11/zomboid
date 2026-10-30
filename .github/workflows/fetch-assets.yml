@@ -3,6 +3,9 @@ name: Fetch Kenney assets
 on:
   workflow_dispatch:
 
+permissions:
+  contents: write
+
 jobs:
   fetch:
     runs-on: ubuntu-latest
@@ -24,9 +27,12 @@ jobs:
           unzip -q pack.zip -d pack
           find pack -type f | sort > ../filelist.txt
           wc -l ../filelist.txt
-      - uses: actions/upload-artifact@v4
-        with:
-          name: kenney
-          path: |
-            dl/pack.zip
-            filelist.txt
+      - name: Push pack to branch kenney-raw
+        run: |
+          mkdir out && cp -r dl/pack/* out/ && cp filelist.txt out/
+          cd out
+          git init -q -b kenney-raw
+          git config user.name "github-actions"
+          git config user.email "github-actions@users.noreply.github.com"
+          git add -A && git commit -qm "Kenney Top-down Shooter (CC0) raw"
+          git push -f "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}.git" kenney-raw
