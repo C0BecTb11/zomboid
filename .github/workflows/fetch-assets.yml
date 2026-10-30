@@ -1,0 +1,32 @@
+name: Fetch Kenney assets
+
+on:
+  workflow_dispatch:
+
+jobs:
+  fetch:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download Kenney Top-down Shooter (CC0)
+        run: |
+          set -x
+          mkdir -p dl && cd dl
+          page=$(curl -sL https://kenney.nl/assets/top-down-shooter)
+          url=$(echo "$page" | grep -oE 'https://kenney.nl/media/pages/assets/top-down-shooter/[^"]+\.zip' | head -1)
+          echo "kenney url: $url"
+          if [ -n "$url" ]; then curl -sL -o pack.zip "$url"; fi
+          if [ ! -s pack.zip ] || ! unzip -tq pack.zip; then
+            ogurl=$(curl -sL https://opengameart.org/content/topdown-shooter | grep -oE 'https://opengameart.org/sites/default/files/[^"]+\.zip' | head -1)
+            echo "oga url: $ogurl"
+            curl -sL -o pack.zip "$ogurl"
+          fi
+          ls -la
+          unzip -q pack.zip -d pack
+          find pack -type f | sort > ../filelist.txt
+          wc -l ../filelist.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: kenney
+          path: |
+            dl/pack.zip
+            filelist.txt
