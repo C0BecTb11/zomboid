@@ -143,6 +143,9 @@ jobs:
           cd build/ios
           PROJ=$(ls -d *.xcodeproj | head -1)
           SCHEME="${PROJ%.xcodeproj}"
+          # в симуляторе нет MetalFX — убираем только для проверочной сборки
+          cp "$PROJ/project.pbxproj" /tmp/project.pbxproj.orig
+          sed -i '' '/MetalFX/d' "$PROJ/project.pbxproj"
           xcodebuild -project "$PROJ" -scheme "$SCHEME" -configuration Debug -sdk iphonesimulator \
             -destination 'generic/platform=iOS Simulator' -derivedDataPath dd \
             CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO build 2>&1 | tee ../../ios-build.log | grep -E "error:|warning: unable|BUILD (SUCCEEDED|FAILED)" | head -40
@@ -164,7 +167,8 @@ jobs:
 
       - name: Pack Xcode project
         run: |
-          cd build && rm -rf ios/dd && zip -qr zomboid-ios-xcode.zip ios
+          cd build/ios && PROJ=$(ls -d *.xcodeproj | head -1) && cp /tmp/project.pbxproj.orig "$PROJ/project.pbxproj"
+          cd .. && rm -rf ios/dd && zip -qr zomboid-ios-xcode.zip ios
 
       - name: Push iOS results
         if: always()
