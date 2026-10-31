@@ -459,7 +459,7 @@ class Scene3D {
             val cols = intArrayOf(shirts[sk], pants[sk], zskin[z.id % 4], hairs[z.id % 4])
             val yaw = Math.toDegrees(atan2(z.fx.toDouble(), z.fy.toDouble())).toFloat()
             val gy = groundAt(w, z.rx, z.ry)
-            person(z.rx, gy, z.ry, yaw, st?.get(0) ?: 0f, if ((st?.get(3) ?: 0f) > 0.15f) 1f else 0.25f, true, 0f, null, z.down > 0f, cols, false, z.chase > 0f, 0.95f + (z.id % 5) * 0.025f, stain = z.id % 2 == 0)
+            person(z.rx, gy, z.ry, yaw, st?.get(0) ?: 0f, if ((st?.get(3) ?: 0f) > 0.15f) 0.75f else 0.15f, true, 0f, null, z.down > 0f, cols, false, z.chase > 0f, 0.95f + (z.id % 5) * 0.025f, stain = z.id % 2 == 0, climb = z.climb)
         }
         // игроки
         for (p in gm.players) {
@@ -470,7 +470,7 @@ class Scene3D {
             val yaw = Math.toDegrees(atan2(p.fx.toDouble(), p.fy.toDouble())).toFloat()
             val gy = groundAt(w, p.rx, p.ry)
             val moving = if ((st?.get(3) ?: 0f) > 0.3f) 1f else 0f
-            person(p.rx, gy, p.ry, yaw, st?.get(0) ?: 0f, moving, false, p.attackAnim, p.weapon(), false, cols, p.sneaking, false, 1f, longHair = p.id == 1)
+            person(p.rx, gy, p.ry, yaw, st?.get(0) ?: 0f, moving, false, p.attackAnim, p.weapon(), false, cols, p.sneaking, false, 1f, longHair = p.id == 1, climb = p.climb)
         }
         // частицы
         for (p in particles) {
@@ -531,70 +531,116 @@ class Scene3D {
         }
     }
 
-    /** Персонаж из частей. Лицом вдоль +Z локально. */
+    /** Персонаж: гладкие формы, суставы, лицо. Лицом вдоль +Z локально, ступни на y=0. */
     private fun person(x: Float, gy: Float, z: Float, yaw: Float, phase: Float, moving: Float, zombie: Boolean, attack: Float, weapon: ItemDef?,
-                       lying: Boolean, cols: IntArray, sneak: Boolean, angry: Boolean, scale: Float, stain: Boolean = false, longHair: Boolean = false) {
+                       lying: Boolean, cols: IntArray, sneak: Boolean, angry: Boolean, scale: Float, stain: Boolean = false, longHair: Boolean = false, climb: Float = -1f) {
         val shirt = cols[0]; val pant = cols[1]; val skin = cols[2]; val hair = cols[3]
-        db.identity(); db.translate(x, gy, z); db.rotY(yaw)
-        if (lying) { db.translate(0f, 0.14f, 0.7f); db.rotX(-90f) }
-        db.cur.let { Matrix.scaleM(it, 0, scale, scale, scale) }
-        if (sneak && !lying) { db.translate(0f, -0.12f, 0f); db.rotX(10f) }
-        val sw = (sin(phase) * 32f) * moving
-        // ноги
+        val shoe = 0xFF24201C.toInt()
+        val skinDk = db.darken(skin, 0.82f)
+        val cl = climb >= 0f
+        val cp = if (cl) climb.coerceIn(0f, 1f) else 0f
+        val arc = if (cl) sin(Math.PI * (if (zombie) min(cp / 0.8f, 1f) else cp)).toFloat() else 0f
+        db.identity(); db.translate(x, gy + (if (cl) arc * (if (zombie) 0.62f else 0.55f) else 0f), z); db.rotY(yaw)
+        if (lying) { db.translate(0f, 0.13f, 0.75f); db.rotX(-90f) }
+        Matrix.scaleM(db.cur, 0, scale, scale, scale)
+        val sw = sin(phase) * 28f * moving
+        val lean = when {
+            cl -> arc * (if (zombie) 85f else 62f)
+            lying -> 0f
+            zombie -> 13f
+            sneak -> 22f
+            else -> 3f + moving * 4f
+        }
+        val crouch = if (sneak && !lying && !cl) 0.12f else 0f
+        // ---------- ноги ----------
         for (s in intArrayOf(-1, 1)) {
-            db.push(); db.translate(s * 0.1f, 0.74f, 0f)
-            db.rotX(if (lying) s * 6f else sw * s * (if (sneak) 0.6f else 1f))
-            db.box(0f, -0.33f, 0f, 0.15f, 0.66f, 0.17f, pant)
-            db.box(0f, -0.69f, 0.05f, 0.16f, 0.08f, 0.26f, 0xFF1E1A16.toInt())
+            db.push(); db.translate(s * 0.095f, 0.93f - crouch, 0f)
+            var thigh = -sw * s
+            var knee = moving * (6f + 34f * max(0f, cos(phase) * s))
+            if (sneak && !cl) { thigh -= 28f; knee += 40f }
+            if (zombie && !lying && !cl && s == 1) knee += 10f
+            if (cl) { val lead = if (s == 1) 1f else 0f
+                thigh = -75f * (if (lead > 0f) sin(Math.PI * min(cp * 1.6f, 1f)).toFloat() else sin(Math.PI * max(0f, cp * 1.6f - 0.6f).coerceAtMost(1f)).toFloat()) - arc * 20f
+                knee = -thigh * 0.9f }
+            if (lying) { thigh = s * 4f; knee = 4f }
+            db.rotX(thigh); db.rotZ(s * 2f)
+            db.tube(-0.45f, 0f, 0.056f, 0.078f, pant)
+            db.ellipsoid(0f, 0f, 0f, 0.08f, 0.06f, 0.08f, pant, 4, 8)
+            db.translate(0f, -0.45f, 0f)
+            db.ellipsoid(0f, 0f, 0f, 0.058f, 0.058f, 0.058f, pant, 4, 8)
+            db.rotX(knee)
+            db.tube(-0.43f, 0f, 0.045f, 0.058f, pant)
+            db.translate(0f, -0.43f, 0f)
+            db.rotX(-knee * 0.4f)
+            db.ellipsoid(0f, -0.035f, 0.055f, 0.058f, 0.045f, 0.12f, shoe, 4, 8)
             db.pop()
         }
-        // туловище
-        db.push()
-        if (zombie && !lying) db.rotZ(sin(phase * 0.5f) * 5f)
-        db.box(0f, 1.0f, 0f, 0.44f, 0.56f, 0.25f, shirt)
-        db.box(0f, 0.75f, 0f, 0.45f, 0.06f, 0.26f, db.darken(pant, 0.6f))
-        if (stain) { db.box(0.08f, 1.06f, 0.128f, 0.2f, 0.24f, 0.01f, 0xFF5A0E0E.toInt()); db.box(-0.1f, 0.88f, 0.128f, 0.12f, 0.12f, 0.01f, 0xFF4A0A0A.toInt()) }
-        // голова
-        db.push(); db.translate(0f, 1.44f, 0f)
-        if (zombie) db.rotZ(sin(phase * 0.7f) * 9f + 6f)
-        db.box(0f, 0f, 0f, 0.26f, 0.28f, 0.26f, skin)
-        db.box(0f, 0.12f, -0.015f, 0.28f, 0.07f, 0.29f, hair)
-        db.box(0f, 0.0f, -0.12f, 0.28f, 0.24f, 0.05f, hair)
-        if (longHair) db.box(0f, -0.14f, -0.13f, 0.26f, 0.3f, 0.06f, hair)
-        if (zombie) {
-            val eyeC = if (angry) 0xFFFF3020.toInt() else 0xFF301010.toInt()
-            db.box(-0.06f, 0.03f, 0.131f, 0.05f, 0.035f, 0.01f, eyeC, if (angry) 1f else 0f); db.box(0.06f, 0.03f, 0.131f, 0.05f, 0.035f, 0.01f, eyeC, if (angry) 1f else 0f)
-            db.box(0f, -0.08f, 0.131f, 0.1f, 0.03f, 0.01f, 0xFF3A1010.toInt())
-        } else {
-            db.box(-0.06f, 0.03f, 0.131f, 0.04f, 0.04f, 0.01f, 0xFF1A1A1A.toInt()); db.box(0.06f, 0.03f, 0.131f, 0.04f, 0.04f, 0.01f, 0xFF1A1A1A.toInt())
-        }
+        // ---------- туловище ----------
+        db.push(); db.translate(0f, 0.9f - crouch, 0f)
+        db.rotX(lean)
+        if (zombie && !lying) db.rotZ(sin(phase * 0.5f) * 5f + 3f)
+        db.ellipsoid(0f, 0.05f, 0f, 0.165f, 0.11f, 0.11f, pant, 5, 10)
+        db.tube(0.06f, 0.1f, 0.155f, 0.155f, db.darken(pant, 0.55f), 10, 1.1f, 0.74f)
+        db.tube(0.1f, 0.47f, 0.145f, 0.188f, shirt, 10, 1.12f, 0.7f)
+        db.ellipsoid(0f, 0.47f, 0f, 0.21f, 0.06f, 0.13f, shirt, 4, 10)
+        if (stain) { db.ellipsoid(0.05f, 0.28f, 0.11f, 0.08f, 0.1f, 0.03f, 0xFF5A0E0E.toInt(), 3, 6); db.ellipsoid(-0.09f, 0.16f, 0.1f, 0.05f, 0.05f, 0.03f, 0xFF4A0A0A.toInt(), 3, 6) }
+        if (zombie) db.ellipsoid(0.1f, 0.35f, -0.1f, 0.06f, 0.07f, 0.03f, skinDk, 3, 6)   // дыра в одежде
+        // шея и голова
+        db.tube(0.5f, 0.6f, 0.05f, 0.045f, skin, 8)
+        db.push(); db.translate(0f, 0.71f, 0.01f)
+        if (zombie) db.rotZ(sin(phase * 0.7f) * 8f + 14f)
+        if (zombie) db.rotX(10f)
+        db.ellipsoid(0f, 0f, 0f, 0.1f, 0.122f, 0.112f, skin, 6, 12)
+        db.ellipsoid(0f, -0.075f, 0.035f, 0.075f, 0.05f, 0.075f, skin, 3, 8)                      // челюсть
+        db.ellipsoid(0f, 0.02f, -0.005f, 0.108f, 0.13f, 0.12f, hair, 4, 12, latFrom = 0f, latTo = 0.48f)  // волосы
+        db.ellipsoid(0f, -0.01f, -0.05f, 0.106f, 0.115f, 0.08f, hair, 4, 10, latFrom = 0.2f, latTo = 0.75f)
+        if (longHair) db.ellipsoid(0f, -0.12f, -0.07f, 0.1f, 0.16f, 0.06f, hair, 4, 8)
+        db.ellipsoid(0.1f, -0.005f, 0f, 0.018f, 0.032f, 0.022f, skinDk, 2, 6); db.ellipsoid(-0.1f, -0.005f, 0f, 0.018f, 0.032f, 0.022f, skinDk, 2, 6)
+        db.box(0f, -0.015f, 0.115f, 0.026f, 0.045f, 0.03f, skinDk)                                   // нос
+        val eye = if (zombie) (if (angry) 0xFFFF3020.toInt() else 0xFFD8D0A0.toInt()) else 0xFF1A1A1A.toInt()
+        db.box(-0.038f, 0.02f, 0.103f, 0.026f, 0.018f, 0.012f, eye, if (zombie && angry) 1f else 0f)
+        db.box(0.038f, 0.02f, 0.103f, 0.026f, 0.018f, 0.012f, eye, if (zombie && angry) 1f else 0f)
+        db.box(-0.038f, 0.045f, 0.1f, 0.035f, 0.01f, 0.012f, db.darken(hair, 0.8f)); db.box(0.038f, 0.045f, 0.1f, 0.035f, 0.01f, 0.012f, db.darken(hair, 0.8f))
+        db.box(0f, -0.06f, 0.1f, if (zombie) 0.05f else 0.04f, if (zombie) 0.022f else 0.008f, 0.012f, if (zombie) 0xFF3A0C0C.toInt() else 0xFF8A4A40.toInt())
         db.pop()
-        // руки: s = +1 левая, -1 правая
+        // ---------- руки (s = -1 правая, +1 левая) ----------
         val gun = weapon?.kind == ItemKind.GUN
+        val holding = weapon != null && weapon.id != "fists"
         for (s in intArrayOf(1, -1)) {
-            db.push(); db.translate(s * 0.29f, 1.24f, 0f)
-            val ang = when {
-                lying -> -170f + s * 10f
-                zombie -> -82f + sin(phase + s) * 9f
-                gun -> -84f + (if (s == -1) -attack * 25f else 0f)
-                s == -1 && attack > 0.01f -> -20f - 140f * attack
-                s == -1 && weapon != null && weapon.id != "fists" -> -22f + sw * 0.3f
-                else -> -sw * s * 0.9f
+            db.push(); db.translate(s * 0.205f, 0.43f, 0f)
+            var sh: Float; var el: Float; var side = s * 6f
+            when {
+                lying -> { sh = -170f + s * 8f; el = -5f }
+                cl -> { sh = -70f - arc * 30f + s * 6f; el = -15f }
+                zombie -> { sh = -80f + sin(phase + s) * 9f + (if (s == 1) -8f else 0f); el = -12f; side = s * 3f }
+                gun -> { sh = if (s == -1) -84f - attack * 22f else -78f; el = if (s == -1) -4f else -12f; side = if (s == 1) -26f else -4f }
+                s == -1 && attack > 0.01f -> { sh = -35f - 115f * attack; el = -20f - 30f * attack }
+                s == -1 && holding -> { sh = -20f + sw * 0.25f; el = -55f }
+                else -> { sh = sw * s * 0.9f + (if (sneak) -20f else 0f); el = -12f - moving * 10f }
             }
-            db.rotX(ang)
-            if (gun && s == 1) db.rotZ(-18f)
-            db.box(0f, -0.26f, 0f, 0.12f, 0.52f, 0.13f, if (zombie) db.darken(shirt, 0.9f) else shirt)
-            db.box(0f, -0.56f, 0f, 0.11f, 0.11f, 0.11f, skin)
-            if (s == -1 && weapon != null && weapon.id != "fists") {
+            db.rotX(sh); db.rotZ(side)
+            db.ellipsoid(0f, 0f, 0f, 0.065f, 0.065f, 0.065f, shirt, 4, 8)
+            db.tube(-0.29f, 0f, 0.042f, 0.056f, shirt)
+            db.translate(0f, -0.29f, 0f)
+            db.ellipsoid(0f, 0f, 0f, 0.045f, 0.045f, 0.045f, if (zombie) skinDk else skin, 3, 8)
+            db.rotX(el)
+            db.tube(-0.26f, 0f, 0.034f, 0.044f, if (zombie) skinDk else skin)
+            db.translate(0f, -0.26f, 0f)
+            db.ellipsoid(0f, -0.045f, 0.005f, 0.038f, 0.055f, 0.03f, skin, 4, 8)
+            if (s == -1 && holding) {
+                db.translate(0f, -0.05f, 0f)
                 if (gun) {
-                    db.box(0f, -0.66f, 0.02f, 0.07f, 0.18f, 0.08f, 0xFF26262A.toInt())
-                    db.box(0f, -0.6f, 0.08f, 0.06f, 0.06f, 0.1f, 0xFF26262A.toInt())
+                    db.box(0f, -0.02f, 0.04f, 0.045f, 0.1f, 0.06f, 0xFF26262A.toInt())
+                    db.box(0f, 0.03f, 0.1f, 0.05f, 0.06f, 0.2f, 0xFF2E2E34.toInt())
                 } else {
-                    val len = 0.25f + weapon.range * 0.45f
-                    val thick = if (weapon.id == "knife") 0.03f else if (weapon.id == "bat") 0.07f else 0.05f
-                    db.box(0f, -0.58f, len / 2f - 0.05f, thick, thick, len, weapon.color)
-                    if (weapon.id == "hammer") db.box(0f, -0.58f, len - 0.08f, 0.08f, 0.2f, 0.08f, 0xFF7A7E86.toInt())
-                    if (weapon.id == "crowbar") db.box(0f, -0.52f, len - 0.08f, 0.04f, 0.14f, 0.04f, weapon.color)
+                    val len = 0.25f + weapon!!.range * 0.45f
+                    when (weapon.id) {
+                        "bat" -> { db.translate(0f, 0f, -0.04f); db.rotX(90f); db.tube(0f, len, 0.022f, 0.045f, weapon.color, 8); db.tube(-0.05f, 0f, 0.025f, 0.022f, 0xFF2A2A2A.toInt(), 6) }
+                        "knife" -> { db.box(0f, 0f, 0.04f, 0.03f, 0.03f, 0.1f, 0xFF1E1E1E.toInt()); db.box(0f, 0f, 0.17f, 0.01f, 0.04f, 0.16f, weapon.color) }
+                        "hammer" -> { db.box(0f, 0f, len / 2f - 0.05f, 0.035f, 0.035f, len, 0xFF9A6A3A.toInt()); db.box(0f, 0f, len - 0.06f, 0.06f, 0.16f, 0.06f, 0xFF7A7E86.toInt()) }
+                        "crowbar" -> { db.box(0f, 0f, len / 2f - 0.05f, 0.03f, 0.03f, len, weapon.color); db.box(0f, 0.05f, len - 0.07f, 0.03f, 0.12f, 0.03f, weapon.color) }
+                        else -> db.box(0f, 0f, len / 2f - 0.05f, 0.04f, 0.04f, len, weapon.color)
+                    }
                 }
             }
             db.pop()

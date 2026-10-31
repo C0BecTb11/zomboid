@@ -13,6 +13,26 @@ object Demo {
             "inside", "loot", "body", "inv" -> moveIntoHouse(g, p)
             "night" -> g.time = 23 * 60f
             "evening" -> g.time = 19 * 60f + 50f
+            "climb" -> {
+                // найти разбитое окно рядом и поставить игрока и зомби у него
+                val w = g.world
+                var best = -1; var bd = 1e9f
+                for (i in w.tiles.indices) if (w.tAt(i) == T.WINDOW) { val d = kotlin.math.hypot(i % w.w - p.x, i / w.w - p.y); if (d < bd) { bd = d; best = i } }
+                if (best >= 0) {
+                    w.setIdx(best, T.WINDOW_BROKEN); w.events.clear()
+                    val bx = best % w.w; val by = best / w.w
+                    val out = if (w.windowAlongY(bx, by)) (if (T.isFloor(w.t(bx, by + 1))) floatArrayOf(bx + 0.5f, by - 0.5f) else floatArrayOf(bx + 0.5f, by + 1.5f))
+                        else (if (T.isFloor(w.t(bx + 1, by))) floatArrayOf(bx - 0.5f, by + 0.5f) else floatArrayOf(bx + 1.5f, by + 0.5f))
+                    p.x = out[0] + 1.2f; p.y = out[1] + 0.3f; p.rx = p.x; p.ry = p.y
+                    g.zombies.removeAll { kotlin.math.hypot(it.x - p.x, it.y - p.y) < 12f }
+                    val z = Zombie(9100); z.x = out[0]; z.y = out[1]; z.rx = z.x; z.ry = z.y
+                    val tg = w.climbTarget(best, z.x, z.y)
+                    z.climb = 0.45f; z.clCell = best; z.clFx = z.x; z.clFy = z.y; z.clTx = tg[0]; z.clTy = tg[1]
+                    z.fx = tg[0] - z.x; z.fy = tg[1] - z.y; w.climbOcc[best] = z.id
+                    z.x = z.clFx + (z.clTx - z.clFx) * 0.45f; z.y = z.clFy + (z.clTy - z.clFy) * 0.45f; z.rx = z.x; z.ry = z.y
+                    g.zombies.add(z)
+                }
+            }
         }
         if (kind == "zombies" || kind == "night") {
             for (k in 0 until 7) {

@@ -45,6 +45,22 @@ class World(val w: Int, val h: Int) {
     val containers = HashMap<Int, MutableList<Stack>>()  // ключ — индекс клетки
     val dirtyTiles = HashSet<Int>()
     val dirtyCont = HashSet<Int>()
+    /** Кто сейчас лезет через окно: клетка → id зомби (игроки — отрицательные) */
+    val climbOcc = HashMap<Int, Int>()
+
+    /** Окно в горизонтальной стене (перелезать по оси Y) или в вертикальной (по оси X) */
+    fun windowAlongY(x: Int, y: Int): Boolean {
+        fun wl(t: Int) = t == T.WALL || T.isWindowLike(t) || T.isDoorLike(t)
+        return wl(t(x - 1, y)) || wl(t(x + 1, y))
+    }
+
+    /** Точка по другую сторону окна от (px,py) */
+    fun climbTarget(cell: Int, px: Float, py: Float): FloatArray {
+        val x = cell % w; val y = cell / w
+        val cx = x + 0.5f; val cy = y + 0.5f
+        return if (windowAlongY(x, y)) floatArrayOf(cx, cy + if (py < cy) 0.95f else -0.95f)
+        else floatArrayOf(cx + if (px < cx) 0.95f else -0.95f, cy)
+    }
     /** События смены клеток для анимаций: [индекс, было, стало] */
     val events = ArrayList<IntArray>()
 
@@ -62,7 +78,7 @@ class World(val w: Int, val h: Int) {
         val i = idx(x, y)
         if (barrAt(i) > 0) return true
         return when (tAt(i)) {
-            T.WALL, T.DOOR, T.WINDOW, T.TREE -> true
+            T.WALL, T.DOOR, T.WINDOW, T.WINDOW_BROKEN, T.TREE -> true
             else -> T.isFurniture(tAt(i)) || T.isCar(tAt(i))
         }
     }
@@ -118,7 +134,7 @@ class World(val w: Int, val h: Int) {
         val t = tAt(i)
         if (t == T.WALL || t == T.TREE || T.isFurniture(t) || T.isCar(t)) return -1
         var c = 10
-        if (t == T.WINDOW_BROKEN) c += 10
+        if (t == T.WINDOW_BROKEN) c += 35
         if (t == T.DOOR || t == T.WINDOW) c += 60
         c += barrAt(i) * 80
         return c

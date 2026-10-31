@@ -88,9 +88,58 @@ class MeshBuilder(initial: Int = 4096) {
     fun rotZ(deg: Float) { Matrix.rotateM(cur, 0, deg, 0f, 0f, 1f) }
 
     private fun xf(x: Float, y: Float, z: Float, w: Float, out: FloatArray, off: Int) {
-        v[0] = x; v[1] = y; v[2] = z; v[3] = w
-        Matrix.multiplyMV(r, 0, cur, 0, v, 0)
-        out[off] = r[0]; out[off + 1] = r[1]; out[off + 2] = r[2]
+        val m = cur
+        out[off] = m[0] * x + m[4] * y + m[8] * z + m[12] * w
+        out[off + 1] = m[1] * x + m[5] * y + m[9] * z + m[13] * w
+        out[off + 2] = m[2] * x + m[6] * y + m[10] * z + m[14] * w
+    }
+
+    private val tp = FloatArray(3); private val tn = FloatArray(3)
+
+    /** Вершина в локальных координатах текущей матрицы с гладкой нормалью */
+    private fun lv(x: Float, y: Float, z: Float, nx: Float, ny: Float, nz: Float, c: Int, kind: Float) {
+        xf(x, y, z, 1f, tp, 0); xf(nx, ny, nz, 0f, tn, 0)
+        val l = Math.sqrt((tn[0] * tn[0] + tn[1] * tn[1] + tn[2] * tn[2]).toDouble()).toFloat().coerceAtLeast(1e-6f)
+        put(tp[0], tp[1], tp[2], tn[0] / l, tn[1] / l, tn[2] / l, c, kind)
+    }
+
+    /** Гладкий усечённый конус вдоль локальной оси Y: от y0 (радиус r0) до y1 (r1). Масштаб по X/Z — sx, sz */
+    fun tube(y0: Float, y1: Float, r0: Float, r1: Float, c: Int, segs: Int = 8, sx: Float = 1f, sz: Float = 1f, kind: Float = 0f, capTop: Boolean = true, capBot: Boolean = false) {
+        ensure(segs * 12 + 6)
+        val slope = (r0 - r1) / (y1 - y0)
+        for (i in 0 until segs) {
+            val a0 = (2 * Math.PI * i / segs).toFloat(); val a1 = (2 * Math.PI * (i + 1) / segs).toFloat()
+            val c0 = cos(a0); val s0 = sin(a0); val c1 = cos(a1); val s1 = sin(a1)
+            // нормали учитывают сплющивание
+            val n0x = c0 / sx; val n0z = s0 / sz; val n1x = c1 / sx; val n1z = s1 / sz
+            lv(c0 * r0 * sx, y0, s0 * r0 * sz, n0x, slope, n0z, c, kind)
+            lv(c1 * r1 * sx, y1, s1 * r1 * sz, n1x, slope, n1z, c, kind)
+            lv(c1 * r0 * sx, y0, s1 * r0 * sz, n1x, slope, n1z, c, kind)
+            lv(c0 * r0 * sx, y0, s0 * r0 * sz, n0x, slope, n0z, c, kind)
+            lv(c0 * r1 * sx, y1, s0 * r1 * sz, n0x, slope, n0z, c, kind)
+            lv(c1 * r1 * sx, y1, s1 * r1 * sz, n1x, slope, n1z, c, kind)
+            if (capTop) { lv(0f, y1, 0f, 0f, 1f, 0f, c, kind); lv(c1 * r1 * sx, y1, s1 * r1 * sz, 0f, 1f, 0f, c, kind); lv(c0 * r1 * sx, y1, s0 * r1 * sz, 0f, 1f, 0f, c, kind) }
+            if (capBot) { lv(0f, y0, 0f, 0f, -1f, 0f, c, kind); lv(c0 * r0 * sx, y0, s0 * r0 * sz, 0f, -1f, 0f, c, kind); lv(c1 * r0 * sx, y0, s1 * r0 * sz, 0f, -1f, 0f, c, kind) }
+        }
+    }
+
+    /** Гладкий эллипсоид в локальных координатах. latFrom/latTo — доля сферы по высоте (0 — верх, 1 — низ) */
+    fun ellipsoid(cx: Float, cy: Float, cz: Float, rx: Float, ry: Float, rz: Float, c: Int, rings: Int = 6, segs: Int = 10, kind: Float = 0f, latFrom: Float = 0f, latTo: Float = 1f) {
+        ensure(rings * segs * 6)
+        for (i in 0 until rings) {
+            val p0 = Math.PI * (latFrom + (latTo - latFrom) * i / rings); val p1 = Math.PI * (latFrom + (latTo - latFrom) * (i + 1) / rings)
+            val sp0 = sin(p0).toFloat(); val cp0 = cos(p0).toFloat(); val sp1 = sin(p1).toFloat(); val cp1 = cos(p1).toFloat()
+            for (j in 0 until segs) {
+                val t0 = (2 * Math.PI * j / segs).toFloat(); val t1 = (2 * Math.PI * (j + 1) / segs).toFloat()
+                val ct0 = cos(t0); val st0 = sin(t0); val ct1 = cos(t1); val st1 = sin(t1)
+                fun vv(sp: Float, cp: Float, ct: Float, st: Float) {
+                    val ux = sp * ct; val uy = cp; val uz = sp * st
+                    lv(cx + ux * rx, cy + uy * ry, cz + uz * rz, ux / rx, uy / ry, uz / rz, c, kind)
+                }
+                vv(sp0, cp0, ct0, st0); vv(sp1, cp1, ct1, st1); vv(sp1, cp1, ct0, st0)
+                vv(sp0, cp0, ct0, st0); vv(sp0, cp0, ct1, st1); vv(sp1, cp1, ct1, st1)
+            }
+        }
     }
 
     /** Ящик с центром (cx,cy,cz) и размерами в локальных координатах текущей матрицы */
