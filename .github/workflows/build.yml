@@ -148,7 +148,7 @@ jobs:
           sed -i '' '/MetalFX/d' "$PROJ/project.pbxproj"
           xcodebuild -project "$PROJ" -scheme "$SCHEME" -configuration Debug -sdk iphonesimulator \
             -destination 'generic/platform=iOS Simulator' -derivedDataPath dd \
-            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO build 2>&1 | tee ../../ios-build.log | grep -E "error:|warning: unable|BUILD (SUCCEEDED|FAILED)" | head -40
+            ARCHS=x86_64 ONLY_ACTIVE_ARCH=NO EXCLUDED_ARCHS=arm64 CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO build 2>&1 | tee ../../ios-build.log | grep -E "error:|warning: unable|BUILD (SUCCEEDED|FAILED)" | head -40
 
       - name: Run in Simulator and take screenshot
         continue-on-error: true
