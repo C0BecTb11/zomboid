@@ -52,6 +52,12 @@ class GameView(
     private var selPart = BP.TORSO
     private val treatBtns = ArrayList<Pair<RectF, String>>()
 
+    private var panel = Panel.NONE
+    private var lootCell = -1
+    private var selected: String? = null
+    private var scroll = floatArrayOf(0f, 0f)
+    private var panelPid = -1; private var panelDownX = 0f; private var panelDownY = 0f; private var panelLastY = 0f; private var panelDrag = false
+
     // ---------- сеть/служебное ----------
     private var initSent = false
     private var snapT = 0f
