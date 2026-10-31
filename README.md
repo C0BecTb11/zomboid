@@ -17,3 +17,6 @@
 
 ## Управление
 Левая половина экрана — движение. Справа: Удар, Действие, Бег, Забить.
+
+## Графика
+Спрайты: [Kenney — Top-down Shooter](https://kenney.nl/assets/top-down-shooter), лицензия CC0. Спасибо Kenney!

@@ -73,6 +73,13 @@ class GameView(
     private val pDark = Paint()
     private val rect = RectF()
     private val grass = intArrayOf(0xFF3D5C2C.toInt(), 0xFF41622F.toInt(), 0xFF395629.toInt())
+    private val spr = Sprites(ctx)
+    private val pBlood = Paint(Paint.FILTER_BITMAP_FLAG).apply {
+        colorFilter = android.graphics.PorterDuffColorFilter(0xCC6A0D0D.toInt(), android.graphics.PorterDuff.Mode.SRC_IN)
+    }
+    private val pCorpse = Paint(Paint.FILTER_BITMAP_FLAG).apply {
+        colorFilter = android.graphics.LightingColorFilter(0xFF8A8A8A.toInt(), 0)
+    }
 
     init {
         holder.addCallback(this)
@@ -454,9 +461,11 @@ class GameView(
         for (cp in gm.corpses) {
             if (cp.x < x0 - 1 || cp.x > x1 + 1 || cp.y < y0 - 1 || cp.y > y1 + 1) continue
             val sx = ox + cp.x * ts; val sy = oy + cp.y * ts
-            pFill.color = 0xAA5A1010.toInt(); c.drawCircle(sx, sy, ts * 0.38f, pFill)
-            pFill.color = if (cp.zombie) 0xFF56664A.toInt() else 0xFF3A5070.toInt()
-            rect.set(sx - ts * 0.28f, sy - ts * 0.12f, sx + ts * 0.28f, sy + ts * 0.12f); c.drawRoundRect(rect, ts * 0.1f, ts * 0.1f, pFill)
+            val rot = ((cp.x * 97f + cp.y * 31f) % 360f)
+            c.save(); c.translate(sx, sy); c.rotate(rot)
+            if (!spr.pivot(c, "t320", 32f, 32f, ts / 64f * 0.9f, pBlood)) { pFill.color = 0xAA5A1010.toInt(); c.drawCircle(0f, 0f, ts * 0.38f, pFill) }
+            spr.pivot(c, if (cp.zombie) "z_stand" else "p0_hold", 17f, 21.5f, ts * 0.68f / 43f, pCorpse)
+            c.restore()
         }
 
         // зомби (видимые)
@@ -480,8 +489,12 @@ class GameView(
         // кроны деревьев поверх
         for (y in y0..y1) for (x in x0..x1) if (world.t(x, y) == T.TREE) {
             val sx = ox + (x + 0.5f) * ts; val sy = oy + (y + 0.5f) * ts
-            pFill.color = 0xFF1F3A18.toInt(); c.drawCircle(sx, sy, ts * 0.85f, pFill)
-            pFill.color = 0xFF2C5222.toInt(); c.drawCircle(sx - ts * 0.15f, sy - ts * 0.15f, ts * 0.55f, pFill)
+            val name = if ((hash(x, y) and 7) == 0) "t186" else "t183"
+            c.save(); c.translate(sx, sy); c.rotate(((hash(y, x) and 0x7fffffff) % 360).toFloat())
+            if (!spr.pivot(c, name, 32f, 32f, ts * 1.7f / 64f)) {
+                pFill.color = 0xFF2C5222.toInt(); c.drawCircle(0f, 0f, ts * 0.85f, pFill)
+            }
+            c.restore()
         }
 
         // темнота
@@ -526,132 +539,166 @@ class GameView(
     private fun drawTile(c: Canvas, w: World, x: Int, y: Int, sx: Float, sy: Float, ts: Float) {
         val t = w.t(x, y)
         val e = sx + ts + 0.5f; val b = sy + ts + 0.5f
+        val hv = hash(x, y) and 0x7fffffff
         fun fill(col: Int) { pTile.color = col; c.drawRect(sx, sy, e, b, pTile) }
         fun floorUnder() {
-            // пол под дверью/окном/мебелью берём от соседей
             var f = T.WOOD
             for (k in 0 until 4) { val n = w.t(x + World.DX4[k], y + World.DY4[k]); if (T.isFloor(n)) { f = n; break } }
             drawFloor(c, f, x, y, sx, sy, e, b, ts)
         }
+        fun wallBrick() {
+            if (!spr.tile(c, arrayOf("t42", "t44", "t46")[hv % 3], sx, sy, ts)) fill(0xFFC8743A.toInt())
+            pTile.color = 0x40000000; c.drawRect(sx, b - ts * 0.12f, e, b, pTile)
+        }
         when (t) {
-            T.GRASS, T.TREE -> fill(grass[(hash(x, y) and 0x7fffffff) % 3])
+            T.GRASS, T.TREE -> if (!spr.tile(c, arrayOf("t01", "t02", "t03", "t04")[hv % 4], sx, sy, ts)) fill(grass[hv % 3])
             T.ROAD -> {
-                fill(0xFF38383B.toInt())
-                pTile.color = 0xFFB8A040.toInt()
-                if (y % 25 == 1 && x % 25 > 3 && x % 3 == 0) c.drawRect(sx + ts * 0.1f, sy + ts * 0.46f, sx + ts * 0.9f, sy + ts * 0.54f, pTile)
-                if (x % 25 == 1 && y % 25 > 3 && y % 3 == 0) c.drawRect(sx + ts * 0.46f, sy + ts * 0.1f, sx + ts * 0.54f, sy + ts * 0.9f, pTile)
+                val cy = y % 25 == 1; val cx = x % 25 == 1
+                val vroad = w.t(x, y - 1) == T.ROAD && w.t(x, y + 1) == T.ROAD && (w.t(x - 1, y) != T.ROAD || w.t(x + 1, y) != T.ROAD)
+                val name = when {
+                    cy && !cx && x % 2 == 0 && !vroad -> "t56"
+                    cx && !cy && y % 2 == 0 && vroad -> "t55"
+                    else -> "t86"
+                }
+                if (!spr.tile(c, name, sx, sy, ts)) fill(0xFF38383B.toInt())
             }
-            T.SIDEWALK -> {
-                fill(0xFF85857F.toInt())
-                pTile.color = 0xFF74746E.toInt()
-                c.drawRect(sx, sy, sx + 1.5f, b, pTile); c.drawRect(sx, sy, e, sy + 1.5f, pTile)
-            }
+            T.SIDEWALK -> if (!spr.tile(c, if (hv % 5 == 0) "t09" else if (hv % 2 == 0) "t07" else "t08", sx, sy, ts)) fill(0xFF85857F.toInt())
             T.WOOD, T.TILEFLOOR -> drawFloor(c, t, x, y, sx, sy, e, b, ts)
-            T.WALL -> {
-                fill(0xFFCFC6B4.toInt())
-                pTile.color = 0xFF8E8472.toInt()
-                c.drawRect(sx, b - ts * 0.18f, e, b, pTile)
+            T.WALL -> wallBrick()
+            T.DOOR, T.DOOR_OPEN, T.DOOR_BROKEN -> {
+                floorUnder()
+                val horiz = w.t(x - 1, y) == T.WALL || w.t(x + 1, y) == T.WALL || T.isWindowLike(w.t(x - 1, y)) || T.isWindowLike(w.t(x + 1, y))
+                c.save()
+                if (!horiz) { c.translate(sx + ts / 2, sy + ts / 2); c.rotate(90f); c.translate(-(sx + ts / 2), -(sy + ts / 2)) }
+                when (t) {
+                    T.DOOR -> {
+                        pTile.color = 0xFF6E4A2A.toInt(); c.drawRect(sx, sy + ts * 0.32f, sx + ts, sy + ts * 0.68f, pTile)
+                        pTile.color = 0xFFA97A48.toInt(); c.drawRect(sx + ts * 0.03f, sy + ts * 0.36f, sx + ts * 0.97f, sy + ts * 0.64f, pTile)
+                        pFill.color = 0xFFE0C050.toInt(); c.drawCircle(sx + ts * 0.82f, sy + ts * 0.5f, ts * 0.05f, pFill)
+                    }
+                    T.DOOR_OPEN -> {
+                        pTile.color = 0xFF6E4A2A.toInt(); c.drawRect(sx, sy + ts * 0.0f, sx + ts * 0.16f, sy + ts * 0.9f, pTile)
+                        pTile.color = 0xFFA97A48.toInt(); c.drawRect(sx + ts * 0.03f, sy + ts * 0.03f, sx + ts * 0.13f, sy + ts * 0.87f, pTile)
+                    }
+                    else -> {
+                        pLine.color = 0xFF8A5E34.toInt(); pLine.strokeWidth = ts * 0.1f
+                        c.drawLine(sx + ts * 0.05f, sy + ts * 0.45f, sx + ts * 0.35f, sy + ts * 0.58f, pLine)
+                        c.drawLine(sx + ts * 0.65f, sy + ts * 0.42f, sx + ts * 0.95f, sy + ts * 0.55f, pLine)
+                    }
+                }
+                c.restore()
             }
-            T.DOOR -> { floorUnder(); pTile.color = 0xFF6B4423.toInt(); c.drawRect(sx + ts * 0.05f, sy + ts * 0.05f, e - ts * 0.05f, b - ts * 0.05f, pTile)
-                pFill.color = 0xFFD8B040.toInt(); c.drawCircle(sx + ts * 0.75f, sy + ts * 0.5f, ts * 0.06f, pFill) }
-            T.DOOR_OPEN -> { floorUnder(); pTile.color = 0xFF6B4423.toInt()
-                val horiz = w.t(x - 1, y) == T.WALL || w.t(x + 1, y) == T.WALL
-                if (horiz) c.drawRect(sx, sy, sx + ts * 0.14f, b, pTile) else c.drawRect(sx, sy, e, sy + ts * 0.14f, pTile) }
-            T.DOOR_BROKEN -> { floorUnder(); pLine.color = 0xFF5A3A1E.toInt(); pLine.strokeWidth = ts * 0.08f
-                c.drawLine(sx + ts * 0.1f, sy + ts * 0.2f, sx + ts * 0.4f, sy + ts * 0.35f, pLine)
-                c.drawLine(sx + ts * 0.6f, sy + ts * 0.8f, sx + ts * 0.9f, sy + ts * 0.6f, pLine) }
             T.WINDOW, T.WINDOW_BROKEN -> {
-                fill(0xFFCFC6B4.toInt())
-                pTile.color = if (t == T.WINDOW) 0xFF8FC6DC.toInt() else 0xFF202830.toInt()
-                c.drawRect(sx + ts * 0.15f, sy + ts * 0.15f, e - ts * 0.15f, b - ts * 0.15f, pTile)
-                if (t == T.WINDOW_BROKEN) { pLine.color = 0xFF8FC6DC.toInt(); pLine.strokeWidth = 1.5f * dp
-                    c.drawLine(sx + ts * 0.2f, sy + ts * 0.2f, sx + ts * 0.45f, sy + ts * 0.55f, pLine)
-                    c.drawLine(sx + ts * 0.8f, sy + ts * 0.25f, sx + ts * 0.55f, sy + ts * 0.5f, pLine) }
+                wallBrick()
+                val horiz = w.t(x - 1, y) == T.WALL || w.t(x + 1, y) == T.WALL || T.isWindowLike(w.t(x - 1, y)) || T.isWindowLike(w.t(x + 1, y))
+                c.save()
+                if (!horiz) { c.translate(sx + ts / 2, sy + ts / 2); c.rotate(90f); c.translate(-(sx + ts / 2), -(sy + ts / 2)) }
+                pTile.color = 0xFFE8E8E8.toInt(); c.drawRect(sx, sy + ts * 0.3f, sx + ts, sy + ts * 0.7f, pTile)
+                if (t == T.WINDOW) {
+                    pTile.color = 0xFFA8DCF0.toInt(); c.drawRect(sx + ts * 0.04f, sy + ts * 0.38f, sx + ts * 0.96f, sy + ts * 0.62f, pTile)
+                    pTile.color = 0xCCFFFFFF.toInt(); c.drawRect(sx + ts * 0.15f, sy + ts * 0.42f, sx + ts * 0.4f, sy + ts * 0.46f, pTile)
+                } else {
+                    pTile.color = 0xFF2A3036.toInt(); c.drawRect(sx + ts * 0.04f, sy + ts * 0.38f, sx + ts * 0.96f, sy + ts * 0.62f, pTile)
+                    pLine.color = 0xFFA8DCF0.toInt(); pLine.strokeWidth = 1.5f * dp
+                    c.drawLine(sx + ts * 0.06f, sy + ts * 0.4f, sx + ts * 0.3f, sy + ts * 0.58f, pLine)
+                    c.drawLine(sx + ts * 0.94f, sy + ts * 0.4f, sx + ts * 0.72f, sy + ts * 0.6f, pLine)
+                }
+                c.restore()
             }
             else -> if (T.isFurniture(t)) {
                 floorUnder()
-                val col = when (t) {
-                    T.FRIDGE -> 0xFFEDEDED.toInt(); T.COUNTER -> 0xFF9A9A9A.toInt(); T.WARDROBE -> 0xFF5A3A22.toInt()
-                    T.SHELF -> 0xFF8A6238.toInt(); T.MEDCAB -> 0xFFF4F4F4.toInt(); T.LOCKER -> 0xFF4A5A6A.toInt()
-                    else -> 0xFF7A6A50.toInt()
+                val name = when (t) {
+                    T.FRIDGE -> "t322"
+                    T.COUNTER -> if (hv % 3 == 0) "t297" else "t294"
+                    T.WARDROBE -> "t453"
+                    T.SHELF -> "t430"
+                    T.MEDCAB -> "t269"
+                    T.LOCKER -> "t536"
+                    else -> if (hv % 2 == 0) "t431" else "t432"
                 }
-                pFill.color = 0x55000000; rect.set(sx + ts * 0.1f, sy + ts * 0.14f, e - ts * 0.06f, b - ts * 0.04f); c.drawRoundRect(rect, ts * 0.08f, ts * 0.08f, pFill)
-                pFill.color = col; rect.set(sx + ts * 0.08f, sy + ts * 0.08f, e - ts * 0.1f, b - ts * 0.1f); c.drawRoundRect(rect, ts * 0.08f, ts * 0.08f, pFill)
-                when (t) {
-                    T.MEDCAB -> { pTile.color = 0xFFD03030.toInt(); c.drawRect(sx + ts * 0.44f, sy + ts * 0.25f, sx + ts * 0.56f, sy + ts * 0.73f, pTile); c.drawRect(sx + ts * 0.25f, sy + ts * 0.43f, sx + ts * 0.73f, sy + ts * 0.55f, pTile) }
-                    T.STORESHELF, T.SHELF -> { for (k in 0..2) { pFill.color = intArrayOf(0xFFD04040.toInt(), 0xFF40A0D0.toInt(), 0xFFE0C040.toInt())[(hash(x, y + k) and 0x7fffffff) % 3]
-                        c.drawCircle(sx + ts * (0.28f + k * 0.22f), sy + ts * 0.48f, ts * 0.08f, pFill) } }
-                    T.FRIDGE -> { pTile.color = 0xFFB0B0B0.toInt(); c.drawRect(sx + ts * 0.12f, sy + ts * 0.4f, e - ts * 0.14f, sy + ts * 0.43f, pTile) }
-                    T.LOCKER -> { pTile.color = 0xFF2A3A4A.toInt(); c.drawRect(sx + ts * 0.47f, sy + ts * 0.1f, sx + ts * 0.51f, b - ts * 0.12f, pTile) }
+                if (!spr.tile(c, name, sx, sy, ts)) {
+                    pFill.color = 0xFF8A6238.toInt(); rect.set(sx + ts * 0.08f, sy + ts * 0.08f, e - ts * 0.1f, b - ts * 0.1f); c.drawRoundRect(rect, ts * 0.08f, ts * 0.08f, pFill)
                 }
-                // обысканный пустой — затемнить
-                if (w.containers[w.idx(x, y)]?.isEmpty() == true) { pFill.color = 0x55000000; c.drawRect(sx, sy, e, b, pFill) }
+                if (t == T.MEDCAB) {
+                    pTile.color = 0xFFD03030.toInt()
+                    c.drawRect(sx + ts * 0.45f, sy + ts * 0.3f, sx + ts * 0.55f, sy + ts * 0.7f, pTile)
+                    c.drawRect(sx + ts * 0.3f, sy + ts * 0.45f, sx + ts * 0.7f, sy + ts * 0.55f, pTile)
+                }
+                if (w.containers[w.idx(x, y)]?.isEmpty() == true) { pFill.color = 0x50000000; c.drawRect(sx, sy, e, b, pFill) }
             }
         }
-        // кучка вещей на полу
+        // кучка вещей на полу — ящик
         if (!T.isFurniture(t)) {
             val pile = w.containers[w.idx(x, y)]
             if (pile != null && pile.isNotEmpty()) {
-                pFill.color = 0xFF8A6A3A.toInt(); c.drawCircle(sx + ts * 0.5f, sy + ts * 0.55f, ts * 0.18f, pFill)
-                pFill.color = 0xFFB08850.toInt(); c.drawCircle(sx + ts * 0.5f, sy + ts * 0.5f, ts * 0.12f, pFill)
+                c.save(); c.translate(sx + ts / 2, sy + ts / 2); c.rotate((hv % 40 - 20).toFloat())
+                if (!spr.pivot(c, "t157", 32f, 32f, ts / 64f * 0.9f)) { pFill.color = 0xFFB08850.toInt(); c.drawCircle(0f, 0f, ts * 0.15f, pFill) }
+                c.restore()
             }
         }
-        // баррикада
+        // баррикада — доски крест-накрест
         val bl = w.barrAt(w.idx(x, y))
         if (bl > 0) {
-            pLine.color = 0xFFA07040.toInt(); pLine.strokeWidth = ts * 0.12f
             for (k in 0 until bl) {
-                val o = ts * (0.25f + k * 0.25f)
-                c.drawLine(sx + ts * 0.05f, sy + o - ts * 0.12f, e - ts * 0.05f, sy + o + ts * 0.12f, pLine)
+                c.save(); c.translate(sx + ts / 2, sy + ts / 2)
+                if (k == 1) c.scale(-1f, 1f)
+                if (k == 2) c.rotate(45f)
+                if (!spr.pivot(c, "t265", 32f, 32f, ts / 64f * 1.05f)) {
+                    pLine.color = 0xFFA07040.toInt(); pLine.strokeWidth = ts * 0.12f
+                    c.drawLine(-ts * 0.45f, -ts * 0.3f, ts * 0.45f, ts * 0.3f, pLine)
+                }
+                c.restore()
             }
         }
     }
 
     private fun drawFloor(c: Canvas, t: Int, x: Int, y: Int, sx: Float, sy: Float, e: Float, b: Float, ts: Float) {
-        if (t == T.TILEFLOOR) {
-            pTile.color = if ((x + y) % 2 == 0) 0xFFC8C2B4.toInt() else 0xFFB8B2A4.toInt()
-            c.drawRect(sx, sy, e, b, pTile)
-        } else {
-            pTile.color = 0xFF8B6A43.toInt(); c.drawRect(sx, sy, e, b, pTile)
-            pTile.color = 0xFF7A5C38.toInt()
-            for (k in 1..3) c.drawRect(sx, sy + ts * k / 4f, e, sy + ts * k / 4f + 1.2f, pTile)
-        }
+        val ok = if (t == T.TILEFLOOR) spr.tile(c, "t12", sx, sy, ts)
+        else spr.tile(c, arrayOf("t43", "t45", "t47")[(hash(x, y) and 0x7fffffff) % 3], sx, sy, ts)
+        if (!ok) { pTile.color = if (t == T.TILEFLOOR) 0xFFC8C2B4.toInt() else 0xFF8B6A43.toInt(); c.drawRect(sx, sy, e, b, pTile) }
     }
 
     private fun drawZombie(c: Canvas, z: Zombie, sx: Float, sy: Float, ts: Float) {
         val a = Math.toDegrees(atan2(z.fy, z.fx).toDouble()).toFloat()
-        c.save(); c.translate(sx, sy); c.rotate(a)
-        val sway = kotlin.math.sin(z.anim * 6f) * ts * 0.05f
-        pFill.color = 0x44000000; c.drawCircle(ts * 0.04f, ts * 0.06f, ts * 0.3f, pFill)
-        // руки вперёд
-        pLine.color = 0xFF7E9068.toInt(); pLine.strokeWidth = ts * 0.1f
-        c.drawLine(0f, -ts * 0.2f, ts * 0.42f, -ts * 0.16f + sway, pLine)
-        c.drawLine(0f, ts * 0.2f, ts * 0.42f, ts * 0.16f - sway, pLine)
-        pFill.color = 0xFF5A6A48.toInt(); rect.set(-ts * 0.16f, -ts * 0.27f, ts * 0.16f, ts * 0.27f); c.drawOval(rect, pFill)
-        pFill.color = 0xFF98A880.toInt(); c.drawCircle(ts * 0.04f, 0f, ts * 0.14f, pFill)
-        pFill.color = if (z.chase > 0f) 0xFFFF3030.toInt() else 0xFF802020.toInt()
-        c.drawCircle(ts * 0.12f, -ts * 0.05f, ts * 0.025f, pFill); c.drawCircle(ts * 0.12f, ts * 0.05f, ts * 0.025f, pFill)
+        val sway = kotlin.math.sin(z.anim * 5f) * 7f
+        c.save(); c.translate(sx, sy); c.rotate(a + sway)
+        val s = ts * 0.68f / 43f
+        pFill.color = 0x40000000; c.drawCircle(ts * 0.05f, ts * 0.07f, ts * 0.3f, pFill)
+        if (!spr.pivot(c, "z_hold", 17f, 21.5f, s)) {
+            pFill.color = 0xFF5A6A48.toInt(); c.drawCircle(0f, 0f, ts * 0.28f, pFill)
+        }
+        if (z.chase > 0f) {
+            pFill.color = 0xFFFF2020.toInt()
+            c.drawCircle(ts * 0.13f, -ts * 0.05f, ts * 0.025f, pFill); c.drawCircle(ts * 0.13f, ts * 0.05f, ts * 0.025f, pFill)
+        }
         c.restore()
     }
 
     private fun drawPlayer(c: Canvas, p: Player, sx: Float, sy: Float, ts: Float) {
         val a = Math.toDegrees(atan2(p.fy, p.fx).toDouble()).toFloat()
         c.save(); c.translate(sx, sy); c.rotate(a)
-        pFill.color = 0x44000000; c.drawCircle(ts * 0.04f, ts * 0.06f, ts * 0.3f, pFill)
+        val s = ts * 0.68f / 43f
+        pFill.color = 0x40000000; c.drawCircle(ts * 0.05f, ts * 0.07f, ts * 0.3f, pFill)
         val w = p.weapon()
-        val swing = p.attackAnim * 70f - 35f * (if (p.attackAnim > 0f) 1f else 0f)
-        c.save(); c.rotate(if (w.kind == ItemKind.MELEE && w.id != "fists") swing else 0f)
-        if (w.id != "fists") {
-            pLine.color = w.color; pLine.strokeWidth = ts * (if (w.kind == ItemKind.GUN) 0.1f else 0.08f)
-            val len = if (w.kind == ItemKind.GUN) 0.45f else (0.25f + w.range * 0.25f)
-            c.drawLine(ts * 0.15f, ts * 0.18f, ts * len + ts * 0.15f, ts * 0.12f, pLine)
+        val who = if (p.id == 0) "p0" else "p1"
+        if (w.kind == ItemKind.GUN) {
+            if (!spr.pivot(c, "${who}_gun", 17f, 21.5f, s)) { pFill.color = 0xFF3A6EA5.toInt(); c.drawCircle(0f, 0f, ts * 0.28f, pFill) }
+            if (p.attackAnim > 0.6f) { pFill.color = 0xCCFFE070.toInt(); c.drawCircle(37f * s, 14f * s, ts * 0.1f, pFill) }
+        } else {
+            // оружие ближнего боя в правой руке с замахом
+            if (w.id != "fists") {
+                c.save()
+                c.translate(15f * s, 14f * s)
+                c.rotate(-60f * p.attackAnim + 20f * (1f - p.attackAnim) - 10f)
+                pLine.color = 0xFF3A2A1A.toInt(); pLine.strokeWidth = ts * (if (w.id == "knife") 0.07f else 0.11f)
+                val len = ts * (0.2f + w.range * 0.28f)
+                c.drawLine(0f, 0f, len, 0f, pLine)
+                pLine.color = w.color; pLine.strokeWidth = ts * (if (w.id == "knife") 0.045f else 0.08f)
+                c.drawLine(ts * 0.03f, 0f, len - ts * 0.02f, 0f, pLine)
+                c.restore()
+            }
+            if (!spr.pivot(c, "${who}_hold", 17f, 21.5f, s)) { pFill.color = 0xFF3A6EA5.toInt(); c.drawCircle(0f, 0f, ts * 0.28f, pFill) }
         }
-        c.restore()
-        pFill.color = if (p.id == 0) 0xFF3A6EA5.toInt() else 0xFFA5553A.toInt()
-        rect.set(-ts * 0.16f, -ts * 0.28f, ts * 0.16f, ts * 0.28f); c.drawOval(rect, pFill)
-        pFill.color = 0xFFE0B090.toInt(); c.drawCircle(ts * 0.18f, ts * 0.2f, ts * 0.07f, pFill)
-        pFill.color = 0xFF4A3020.toInt(); c.drawCircle(0f, 0f, ts * 0.15f, pFill)
-        pFill.color = 0xFFE0B090.toInt(); c.drawCircle(ts * 0.05f, 0f, ts * 0.1f, pFill)
         c.restore()
     }
 
