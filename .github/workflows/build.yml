@@ -1,4 +1,4 @@
-name: Build APK
+name: Build
 
 on:
   push:
@@ -8,8 +8,11 @@ on:
 permissions:
   contents: write
 
+env:
+  GODOT_VERSION: 4.4.1
+
 jobs:
-  build:
+  android:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -17,30 +20,162 @@ jobs:
         with:
           distribution: temurin
           java-version: 17
-      - uses: gradle/actions/setup-gradle@v4
-      - name: Build
+
+      - name: Cache Godot
+        id: godot-cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/godot
+            ~/.local/share/godot/export_templates
+          key: godot-${{ env.GODOT_VERSION }}-linux
+
+      - name: Download Godot and export templates
+        if: steps.godot-cache.outputs.cache-hit != 'true'
         run: |
-          chmod +x gradlew
+          mkdir -p ~/godot ~/.local/share/godot/export_templates/${GODOT_VERSION}.stable
+          cd ~/godot
+          wget -q https://github.com/godotengine/godot/releases/download/${GODOT_VERSION}-stable/Godot_v${GODOT_VERSION}-stable_linux.x86_64.zip
+          unzip -q Godot_v${GODOT_VERSION}-stable_linux.x86_64.zip && mv Godot_v${GODOT_VERSION}-stable_linux.x86_64 godot && rm *.zip
+          wget -q https://github.com/godotengine/godot/releases/download/${GODOT_VERSION}-stable/Godot_v${GODOT_VERSION}-stable_export_templates.tpz
+          unzip -q Godot_v${GODOT_VERSION}-stable_export_templates.tpz
+          mv templates/* ~/.local/share/godot/export_templates/${GODOT_VERSION}.stable/
+          rm -rf templates *.tpz
+
+      # постоянный ключ подписи: хранится в закрытом кэше сборок
+      - name: Restore signing key
+        id: key-cache
+        uses: actions/cache@v4
+        with:
+          path: ~/keystore
+          key: android-release-keystore-v1
+
+      - name: Create signing key (first run only)
+        if: steps.key-cache.outputs.cache-hit != 'true'
+        run: |
+          mkdir -p ~/keystore
+          PASS=$(openssl rand -base64 18 | tr -d '/+=')
+          echo -n "$PASS" > ~/keystore/pass
+          keytool -genkeypair -keystore ~/keystore/release.keystore -alias zomboid -keyalg RSA -keysize 2048 \
+            -validity 20000 -storepass "$PASS" -keypass "$PASS" -dname "CN=Dead City, O=C0BecTb11, C=PL"
+
+      - name: Editor settings
+        run: |
+          mkdir -p ~/.config/godot
+          for f in editor_settings-4.4.tres editor_settings-4.tres; do
+            printf '[gd_resource type="EditorSettings" format=3]\n\n[resource]\nexport/android/android_sdk_path = "%s"\nexport/android/java_sdk_path = "%s"\n' "$ANDROID_SDK_ROOT" "$JAVA_HOME" > ~/.config/godot/$f
+          done
+          cat ~/.config/godot/editor_settings-4.4.tres
+
+      - name: Import and export APK
+        run: |
           set -o pipefail
-          ./gradlew --no-daemon assembleRelease 2>&1 | tee build.log
-          cp app/build/outputs/apk/release/app-release.apk zomboid.apk
+          mkdir -p build/android
+          ~/godot/godot --headless --path . --import 2>&1 | tail -5 || true
+          export GODOT_ANDROID_KEYSTORE_RELEASE_PATH=~/keystore/release.keystore
+          export GODOT_ANDROID_KEYSTORE_RELEASE_USER=zomboid
+          export GODOT_ANDROID_KEYSTORE_RELEASE_PASSWORD=$(cat ~/keystore/pass)
+          ~/godot/godot --headless --path . --export-release "Android" build/android/zomboid.apk 2>&1 | tee build.log
+          ls -la build/android
+          test -s build/android/zomboid.apk
+
       - name: Push build log on failure
         if: failure()
         run: |
-          mkdir logout && grep -E "^e: |error:|What went wrong|^w: " -A3 build.log > logout/errors.txt || true
-          tail -200 build.log > logout/tail.txt
+          mkdir logout && cp build.log logout/ 2>/dev/null || echo none > logout/build.log
           cd logout && git init -q -b buildlog && git config user.name gha && git config user.email gha@users.noreply.github.com
           git add -A && git commit -qm log && git push -f "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}.git" buildlog
+
       - uses: actions/upload-artifact@v4
         with:
-          name: zomboid-apk
-          path: zomboid.apk
+          name: android-apk
+          path: build/android/zomboid.apk
+
       - name: Publish to Releases
         uses: softprops/action-gh-release@v2
         with:
           tag_name: latest
           name: Последняя сборка
-          body: "Скачай zomboid.apk и установи на телефон."
+          body: |
+            **Android:** скачай zomboid.apk и установи на телефон.
+            **iOS:** zomboid-ios-xcode.zip — готовый Xcode-проект (для установки нужен аккаунт Apple Developer).
           prerelease: false
           make_latest: true
-          files: zomboid.apk
+          files: build/android/zomboid.apk
+
+  ios:
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Cache Godot
+        id: godot-cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/godot
+            ~/Library/Application Support/Godot/export_templates
+          key: godot-${{ env.GODOT_VERSION }}-macos
+
+      - name: Download Godot and export templates
+        if: steps.godot-cache.outputs.cache-hit != 'true'
+        run: |
+          T="$HOME/Library/Application Support/Godot/export_templates/${GODOT_VERSION}.stable"
+          mkdir -p ~/godot "$T"
+          cd ~/godot
+          curl -sSL -o g.zip https://github.com/godotengine/godot/releases/download/${GODOT_VERSION}-stable/Godot_v${GODOT_VERSION}-stable_macos.universal.zip
+          unzip -q g.zip && rm g.zip
+          curl -sSL -o t.tpz https://github.com/godotengine/godot/releases/download/${GODOT_VERSION}-stable/Godot_v${GODOT_VERSION}-stable_export_templates.tpz
+          unzip -q t.tpz && mv templates/* "$T/" && rm -rf templates t.tpz
+
+      - name: Export Xcode project
+        run: |
+          set -o pipefail
+          G=~/godot/Godot.app/Contents/MacOS/Godot
+          mkdir -p build/ios
+          $G --headless --path . --import 2>&1 | tail -5 || true
+          $G --headless --path . --export-release "iOS" build/ios/zomboid.ipa 2>&1 | tee ios-export.log
+          ls -la build/ios
+
+      - name: Build for iOS Simulator
+        run: |
+          set -o pipefail
+          cd build/ios
+          PROJ=$(ls -d *.xcodeproj | head -1)
+          SCHEME="${PROJ%.xcodeproj}"
+          xcodebuild -project "$PROJ" -scheme "$SCHEME" -configuration Debug -sdk iphonesimulator \
+            -destination 'generic/platform=iOS Simulator' -derivedDataPath dd \
+            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO build 2>&1 | tee ../../ios-build.log | grep -E "error:|warning: unable|BUILD (SUCCEEDED|FAILED)" | head -40
+
+      - name: Run in Simulator and take screenshot
+        continue-on-error: true
+        run: |
+          APP=$(find build/ios/dd -name "*.app" -path "*iphonesimulator*" | head -1)
+          echo "app: $APP"
+          DEV=$(xcrun simctl list devices available | grep -E "iPhone 1[5-6]" | head -1 | grep -oE "[0-9A-F-]{36}")
+          xcrun simctl boot "$DEV"
+          sleep 20
+          xcrun simctl install "$DEV" "$APP"
+          xcrun simctl launch "$DEV" com.c0bectb11.zomboid
+          sleep 25
+          mkdir -p shots
+          xcrun simctl io "$DEV" screenshot shots/ios_menu.png
+          xcrun simctl spawn "$DEV" log show --last 2m --predicate 'process CONTAINS "zomboid" OR process CONTAINS "Мёртвый"' 2>/dev/null | tail -60 > shots/ios_log.txt || true
+
+      - name: Pack Xcode project
+        run: |
+          cd build && rm -rf ios/dd && zip -qr zomboid-ios-xcode.zip ios
+
+      - name: Push iOS results
+        if: always()
+        run: |
+          mkdir -p out && cp -r shots/* out/ 2>/dev/null || true
+          cp ios-build.log ios-export.log out/ 2>/dev/null || true
+          cd out && git init -q -b ios-results && git config user.name gha && git config user.email gha@users.noreply.github.com
+          git add -A && git commit -qm "ios ${{ github.sha }}" && git push -f "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}.git" ios-results
+
+      - name: Attach Xcode project to release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: latest
+          files: build/zomboid-ios-xcode.zip

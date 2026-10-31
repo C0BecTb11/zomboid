@@ -1,5 +1,4 @@
-.gradle/
+.godot/
 build/
-local.properties
-*.iml
-.idea/
+*.tmp
+export_credentials.cfg
