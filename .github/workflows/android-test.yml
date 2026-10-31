@@ -34,8 +34,11 @@ jobs:
             mkdir -p shots
             adb install -r apk/zomboid.apk
             adb shell settings put system accelerometer_rotation 0
-            adb shell monkey -p com.c0bectb11.zomboid -c android.intent.category.LAUNCHER 1
+            adb shell cmd package resolve-activity --brief com.c0bectb11.zomboid | tee shots/activity.txt
+            ACT=$(adb shell cmd package resolve-activity --brief com.c0bectb11.zomboid | tail -1 | tr -d '\r')
+            adb shell am start -W -n "$ACT" | tee shots/start.txt
             sleep 15
+            adb shell dumpsys activity activities | grep -E "mResumedActivity|topResumedActivity" | tee shots/top.txt
             adb exec-out screencap -p > shots/android_menu.png
             adb shell wm size
             adb shell input tap 1170 366
@@ -45,6 +48,8 @@ jobs:
             sleep 3
             adb exec-out screencap -p > shots/android_walk.png
             adb logcat -d -s godot:* AndroidRuntime:E > shots/android_log.txt || true
+            adb logcat -d -b crash > shots/crash.txt || true
+            adb logcat -d '*:E' | tail -150 > shots/errors.txt || true
       - name: Push screenshots
         if: always()
         run: |
