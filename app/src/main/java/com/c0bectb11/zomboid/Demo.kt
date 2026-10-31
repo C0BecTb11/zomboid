@@ -31,6 +31,8 @@ object Demo {
                     z.fx = tg[0] - z.x; z.fy = tg[1] - z.y; w.climbOcc[best] = z.id
                     z.x = z.clFx + (z.clTx - z.clFx) * 0.45f; z.y = z.clFy + (z.clTy - z.clFy) * 0.45f; z.rx = z.x; z.ry = z.y
                     g.zombies.add(z)
+                    // игрок в процессе перелезания через соседнее окно не нужен — снимаем зомби в позе
+                    g.freeze = true
                 }
             }
         }

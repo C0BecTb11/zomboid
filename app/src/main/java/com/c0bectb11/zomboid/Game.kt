@@ -175,8 +175,10 @@ class Game(val seed: Long) {
     }
 
     // ================== СИМУЛЯЦИЯ ==================
+    var freeze = false                // только для демо-скриншотов
+
     fun update(dt: Float) {
-        if (isReplica) return
+        if (isReplica || freeze) return
         while (true) {
             val (pid, a) = actions.poll() ?: break
             val p = player(pid) ?: continue
