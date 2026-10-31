@@ -230,14 +230,24 @@ func update(dt: float, g: GameState, me: GameState.Player, local_pid: int) -> vo
 	for f in g.fx:
 		_on_fx(f, local_pid, me)
 	g.fx.clear()
-	# перестроить не более 2 чанков за кадр
+	# перестройка чанков: сначала ближайшие к игроку; вблизи — сразу, дальше — по 2 за кадр
+	var pcx := clampi(floori(me.rpos.x) / WorldMesh.CHUNK, 0, wm.chunks_x - 1)
+	var pcy := clampi(floori(me.rpos.y) / WorldMesh.CHUNK, 0, wm.chunks_y - 1)
+	var order: Array = []
+	for ci in chunk_dirty.size():
+		if chunk_dirty[ci] == 1:
+			var d := maxi(absi(ci % wm.chunks_x - pcx), absi(ci / wm.chunks_x - pcy))
+			order.append([d, ci])
+	order.sort_custom(func(a, b): return a[0] < b[0])
 	var built := 0
-	for i in chunk_dirty.size():
-		if chunk_dirty[i] == 1 and built < 2:
-			wm.build_chunk(mesher, i % wm.chunks_x, i / wm.chunks_x)
-			chunk_nodes[i].mesh = mesher.commit()
-			chunk_dirty[i] = 0
-			built += 1
+	for o in order:
+		if o[0] > 1 and built >= 2:
+			break
+		var ci2: int = o[1]
+		wm.build_chunk(mesher, ci2 % wm.chunks_x, ci2 / wm.chunks_x)
+		chunk_nodes[ci2].mesh = mesher.commit()
+		chunk_dirty[ci2] = 0
+		built += 1
 	# двери
 	for k in door_angle.keys():
 		var tt := world.t_at(k)
