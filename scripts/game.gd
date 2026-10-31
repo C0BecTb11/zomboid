@@ -34,6 +34,9 @@ class Player:
 	var cl_from := Vector2.ZERO
 	var cl_to := Vector2.ZERO
 	var rpos := Vector2.ZERO   # позиция для отрисовки
+	var name := ""
+	var remote := false        # движение считает телефон друга (хост только принимает)
+	var force_seq := 0         # хост сдвинул игрока сам — клиент должен принять позицию
 	func _init(pid: int = 0) -> void:
 		id = pid
 	func weapon() -> Dictionary: return Items.def(eq if eq != "" else "fists")
@@ -88,6 +91,7 @@ var messages := {}             # pid → Array[String]
 var shots: Array = []          # [x1, y1, x2, y2, жизнь]
 var fx: Array = []             # [тип, x, y, параметр] — 1 кровь, 2 смерть зомби, 3 ранен игрок, 4 выстрел
 var fx_net: Array = []
+var uids := {}                 # постоянный ID телефона друга → номер персонажа
 
 func _init(s: int = 0) -> void:
 	seed = s
@@ -155,11 +159,30 @@ func spawn_zombies(n: int, avoid: Vector2) -> void:
 		zombies.append(z)
 		made += 1
 
-func add_player(pid: int) -> Player:
-	var ex := player(pid)
-	if ex != null:
-		ex.connected = true
-		return ex
+## Друг подключился: тот же телефон получает своего прежнего персонажа
+func join_player(uid: String, pname: String) -> Player:
+	var pid := -1
+	if uids.has(uid):
+		pid = int(uids[uid])
+	else:
+		pid = 1
+		for p in players:
+			pid = maxi(pid, p.id + 1)
+		uids[uid] = pid
+	var p := player(pid)
+	if p != null and p.dead:
+		players.erase(p)
+		p = null
+	if p == null:
+		p = _spawn_friend(pid)
+	p.connected = true
+	p.remote = true
+	p.name = pname
+	p.move = Vector2.ZERO
+	p.force_seq += 1
+	return p
+
+func _spawn_friend(pid: int) -> Player:
 	var host: Player = players[0] if players.size() > 0 else null
 	var p := Player.new(pid)
 	p.pos = (host.pos if host else Vector2(50, 50)) + Vector2(0.6, 0)
@@ -169,6 +192,18 @@ func add_player(pid: int) -> Player:
 	p.inv = [{"id": "water", "n": 1}, {"id": "bandage", "n": 1}]
 	players.append(p)
 	return p
+
+func leave_player(pid: int) -> void:
+	var p := player(pid)
+	if p == null:
+		return
+	p.connected = false
+	p.move = Vector2.ZERO
+	p.ta_act = null
+	if p.climb >= 0.0:
+		p.pos = p.cl_to
+		p.climb = -1.0
+		_release_climb(p)
 
 # ================== СИМУЛЯЦИЯ ==================
 func update(dt: float) -> void:
@@ -218,16 +253,13 @@ func _age_shots(dt: float) -> void:
 
 func tick_replica(dt: float) -> void:
 	_age_shots(dt)
+	for p in players:
+		p.attack_anim = maxf(0.0, p.attack_anim - dt * 4.0)
 
 func _cell_at(p: Vector2) -> int:
 	return world.idx(clampi(floori(p.x), 0, world.w - 1), clampi(floori(p.y), 0, world.h - 1))
 
-func _update_player(p: Player, dt: float) -> void:
-	if p.dead or not p.connected:
-		return
-	p.cooldown -= dt
-	p.attack_anim = maxf(0.0, p.attack_anim - dt * 4.0)
-	var mag := p.move.length()
+func move_speed(p: Player, mag: float) -> Array:
 	var heavy := p.weight() > MAX_WEIGHT
 	var running := p.run and p.stamina > 1.0 and mag > 0.1
 	p.sneaking = not running and mag >= 0.1 and mag <= 0.6
@@ -240,23 +272,54 @@ func _update_player(p: Player, dt: float) -> void:
 	if p.stamina < 10.0:
 		speed *= 0.8
 	speed *= p.body.leg_penalty()
+	return [speed, running]
+
+## Перемещение игрока. authoritative=false — предсказание на телефоне друга (без ран и шума)
+func move_player(p: Player, dt: float, authoritative: bool) -> Array:
+	var mag := p.move.length()
+	var ms := move_speed(p, mag)
+	var speed: float = ms[0]
+	var running: bool = ms[1]
 	if p.climb >= 0.0:
 		p.climb += dt / 1.3
 		p.pos = p.cl_from.lerp(p.cl_to, minf(p.climb, 1.0))
 		if p.climb >= 1.0:
 			p.climb = -1.0
-			for k in world.climb_occ.keys():
-				if world.climb_occ[k] == -1 - p.id:
-					world.climb_occ.erase(k)
-		_finish_player(p, dt, false, 0.0)
-		return
+			_release_climb(p)
+		return [false, 0.0]
 	if mag > 0.1:
 		var n := p.move / maxf(1.0, mag)
 		p.face = p.move / mag
 		var before := p.pos
 		p.pos = _move_circle(p.pos, n * speed * dt, PLAYER_R)
 		if p.pos.distance_to(before) < speed * dt * 0.5:
-			_try_climb(p, n)
+			_try_climb(p, n, authoritative)
+	return [running, mag]
+
+func _release_climb(p: Player) -> void:
+	for k in world.climb_occ.keys():
+		if world.climb_occ[k] == -1 - p.id:
+			world.climb_occ.erase(k)
+
+func _update_player(p: Player, dt: float) -> void:
+	if p.dead or not p.connected:
+		return
+	p.cooldown -= dt
+	p.attack_anim = maxf(0.0, p.attack_anim - dt * 4.0)
+	var running := false
+	var mag := 0.0
+	if p.remote:
+		# позицию прислал телефон друга; здесь только последствия движения
+		mag = p.move.length() if p.climb < 0.0 else 0.0
+		running = move_speed(p, mag)[1] if mag > 0.1 else false
+	else:
+		var r := move_player(p, dt, true)
+		running = r[0]
+		mag = r[1]
+	if p.climb >= 0.0:
+		_finish_player(p, dt, false, 0.0)
+		return
+	if mag > 0.1:
 		if running:
 			p.stamina -= dt * 12.0
 			if rnd.randf() < dt * 1.2:
@@ -274,7 +337,40 @@ func _update_player(p: Player, dt: float) -> void:
 			_perform(p, a)
 	_finish_player(p, dt, running, mag)
 
-func _try_climb(p: Player, n: Vector2) -> void:
+## Ввод с телефона друга: позиция, взгляд, перелезание
+func remote_input(p: Player, o: Dictionary) -> void:
+	p.move = Vector2(o.get("mx", 0.0), o.get("my", 0.0))
+	p.run = o.get("run", false)
+	if p.dead:
+		return
+	if int(o.get("fs", -1)) != p.force_seq:
+		return    # друг ещё не получил наш принудительный сдвиг
+	var np := Vector2(o.get("x", p.pos.x), o.get("y", p.pos.y))
+	if np.distance_to(p.pos) < 4.0:
+		p.pos = np
+	p.face = Vector2(o.get("fx", p.face.x), o.get("fy", p.face.y))
+	var cl: float = o.get("cl", -1.0)
+	if cl >= 0.0 and p.climb < 0.0:
+		# друг начал лезть в окно
+		var to := Vector2(o.get("ctx", p.pos.x), o.get("cty", p.pos.y))
+		var mid := (p.pos + to) * 0.5
+		var wc := world.idx(floori(mid.x), floori(mid.y))
+		world.climb_occ[wc] = -1 - p.id
+		p.ta_act = null
+		if rnd.randf() < 0.25:
+			var part: int = [Body.L_HAND, Body.R_HAND, Body.L_FORE, Body.R_FORE, Body.L_SHIN, Body.R_SHIN, Body.L_THIGH, Body.R_THIGH][rnd.randi() % 8]
+			wound(p, part, Body.GLASS)
+			msg(p.id, "Порезался о стекло: " + Body.NAMES[part].to_lower())
+		noise(p.pos, 4.0, p)
+	elif cl < 0.0 and p.climb >= 0.0:
+		_release_climb(p)
+	p.climb = cl
+
+func push_player(p: Player, to: Vector2) -> void:
+	p.pos = to
+	p.force_seq += 1
+
+func _try_climb(p: Player, n: Vector2, authoritative: bool = true) -> void:
 	var wx := floori(p.pos.x + n.x * 0.6)
 	var wy := floori(p.pos.y + n.y * 0.6)
 	if not world.inside(wx, wy):
@@ -291,6 +387,8 @@ func _try_climb(p: Player, n: Vector2) -> void:
 	p.cl_from = p.pos
 	p.cl_to = tg
 	p.face = (tg - p.pos).normalized()
+	if not authoritative:
+		return
 	world.climb_occ[wc] = -1 - p.id
 	p.ta_act = null
 	if rnd.randf() < 0.25:
@@ -730,7 +828,7 @@ func _interact(p: Player, cell: int) -> void:
 			else:
 				np = Vector2(c.x + (-0.82 if p.pos.x < c.x else 0.82), clampf(p.pos.y, c.y - 0.5 + PLAYER_R + 0.02, c.y + 0.5 - PLAYER_R - 0.02))
 			if not world.circle_blocked(np.x, np.y, PLAYER_R):
-				p.pos = np
+				push_player(p, np)
 		var blocked := false
 		for o: Player in players:
 			if not o.dead and absf(o.pos.x - c.x) < 0.6 and absf(o.pos.y - c.y) < 0.6:
@@ -928,7 +1026,8 @@ func player_data(p: Player) -> Dictionary:
 		"hp": snappedf(p.hp, 0.01), "hu": snappedf(p.hunger, 0.01), "th": snappedf(p.thirst, 0.01), "st": snappedf(p.stamina, 0.01),
 		"body": p.body.to_data(), "inf": snappedf(p.infection, 0.01), "dead": p.dead, "k": p.kills, "eq": p.eq,
 		"inv": Items.copy(p.inv), "aa": snappedf(p.attack_anim, 0.01), "con": p.connected, "sn": p.sneaking,
-		"cl": snappedf(p.climb, 0.01), "tn": p.ta_name if p.ta_act != null else "", "tp": snappedf(p.ta_progress(), 0.01)}
+		"cl": snappedf(p.climb, 0.01), "tn": p.ta_name if p.ta_act != null else "", "tp": snappedf(p.ta_progress(), 0.01),
+		"nm": p.name, "fs": p.force_seq}
 
 func player_from(o: Dictionary, p: Player) -> void:
 	p.pos = Vector2(o["x"], o["y"])
@@ -949,6 +1048,8 @@ func player_from(o: Dictionary, p: Player) -> void:
 	p.connected = o.get("con", true)
 	p.sneaking = o.get("sn", false)
 	p.climb = o.get("cl", -1.0)
+	p.name = o.get("nm", "")
+	p.force_seq = int(o.get("fs", 0))
 	var tn: String = o.get("tn", "")
 	if tn != "":
 		p.ta_name = tn
@@ -978,11 +1079,12 @@ func to_data() -> Dictionary:
 	var ps := []
 	for p: Player in players:
 		ps.append(player_data(p))
-	return {"v": 2, "seed": seed, "time": time, "tiles": Marshalls.raw_to_base64(world.tiles),
+	return {"v": 2, "seed": seed, "time": time, "uids": uids.duplicate(), "tiles": Marshalls.raw_to_base64(world.tiles),
 		"thp": thp, "barr": ba, "cont": _cont_data(world.containers), "z": zs, "p": ps, "corpses": corpses.duplicate(true)}
 
 func load_data(o: Dictionary) -> void:
 	time = o["time"]
+	uids = o.get("uids", {}).duplicate()
 	var t := Marshalls.base64_to_raw(o["tiles"])
 	for i in mini(t.size(), world.tiles.size()):
 		world.tiles[i] = t[i]
@@ -1021,20 +1123,37 @@ func load_data(o: Dictionary) -> void:
 		corpses.append([float(c[0]), float(c[1]), bool(c[2])])
 
 # ================== СЕТЕВЫЕ СНИМКИ ==================
-func snapshot() -> Dictionary:
-	var o := {"t": "snap", "time": time}
-	var ps := []
-	for p: Player in players:
-		ps.append(player_data(p))
-	o["p"] = ps
+## Частый лёгкий снимок (ненадёжный канал): позиции рядом с другом
+func state_for(pid: int) -> Dictionary:
+	var me := player(pid)
+	var c: Vector2 = me.pos if me != null else Vector2(50, 50)
+	var ps := PackedFloat32Array()
+	for p in players:
+		if not p.connected and p.id != 0:
+			continue
+		ps.append_array([p.id, p.pos.x, p.pos.y, p.face.x, p.face.y, p.attack_anim, 1.0 if p.sneaking else 0.0, p.climb, p.force_seq, p.hp, p.stamina])
+	var zs := PackedFloat32Array()
+	for z in zombies:
+		if absf(z.pos.x - c.x) > 30.0 or absf(z.pos.y - c.y) > 30.0:
+			continue
+		zs.append_array([z.id, z.pos.x, z.pos.y, z.face.x, z.face.y, (1.0 if z.chase > 0.0 else 0.0) + (2.0 if z.down > 0.0 else 0.0), z.climb])
+	var o := {"t": "st", "time": time, "p": ps, "z": zs}
+	if shots.size() > 0:
+		o["sh"] = shots.duplicate(true)
+	return o
+
+## Редкий надёжный снимок: изменения мира, полные данные игроков, сообщения, эффекты
+func events_for(pid: int, full_players: bool, corpses_changed: bool) -> Dictionary:
+	var o := {"t": "ev"}
+	if full_players:
+		var ps := []
+		for p in players:
+			if p.connected or p.id == 0:
+				ps.append(player_data(p))
+		o["p"] = ps
 	if fx_net.size() > 0:
 		o["fx"] = fx_net.duplicate(true)
 		fx_net.clear()
-	var zs := []
-	for z: Zombie in zombies:
-		zs.append([z.id, snappedf(z.pos.x, 0.01), snappedf(z.pos.y, 0.01), snappedf(z.face.x, 0.01), snappedf(z.face.y, 0.01),
-			1 if z.chase > 0.0 else 0, 1 if z.down > 0.0 else 0, snappedf(z.climb, 0.01)])
-	o["z"] = zs
 	if world.dirty_tiles.size() > 0:
 		var a := []
 		for i in world.dirty_tiles:
@@ -1047,9 +1166,11 @@ func snapshot() -> Dictionary:
 			co[str(i)] = Items.copy(world.containers.get(i, []))
 		o["cc"] = co
 		world.dirty_cont.clear()
-	if shots.size() > 0:
-		o["sh"] = shots.duplicate(true)
-	o["cp"] = corpses.slice(maxi(0, corpses.size() - 80))
+	if corpses_changed:
+		o["cp"] = corpses.slice(maxi(0, corpses.size() - 80))
+	var m := pop_messages(pid)
+	if m.size() > 0:
+		o["m"] = m
 	return o
 
 func pop_messages(pid: int) -> Array:
@@ -1057,39 +1178,93 @@ func pop_messages(pid: int) -> Array:
 	messages.erase(pid)
 	return m
 
-func apply_snapshot(o: Dictionary) -> void:
+## Клиент: принять лёгкий снимок. Свою позицию не трогаем — её считает этот телефон
+func apply_state(o: Dictionary, local_pid: int) -> void:
 	time = o["time"]
-	for e in o["p"]:
-		var p := player(int(e["id"]))
+	var ps: PackedFloat32Array = o["p"]
+	var i := 0
+	while i + 10 < ps.size():
+		var pid := int(ps[i])
+		var p := player(pid)
 		if p == null:
-			p = Player.new(int(e["id"]))
-			p.pos = Vector2(e["x"], e["y"])
+			p = Player.new(pid)
+			p.pos = Vector2(ps[i + 1], ps[i + 2])
 			p.rpos = p.pos
 			players.append(p)
-		player_from(e, p)
+		p.connected = true
+		p.hp = ps[i + 9]
+		p.stamina = ps[i + 10]
+		var fs := int(ps[i + 8])
+		if not (pid == local_pid and fs == p.force_seq):
+			p.force_seq = fs
+			p.pos = Vector2(ps[i + 1], ps[i + 2])
+			p.face = Vector2(ps[i + 3], ps[i + 4])
+			p.attack_anim = ps[i + 5]
+			p.sneaking = ps[i + 6] > 0.5
+			p.climb = ps[i + 7]
+			if pid == local_pid:
+				p.rpos = p.pos
+		elif pid == local_pid:
+			pass
+		i += 11
+	if local_pid >= 0:
+		# атака своего персонажа приходит с хоста
+		pass
 	var by_id := {}
-	for z: Zombie in zombies:
+	for z in zombies:
 		by_id[z.id] = z
 	var next := []
-	for e in o["z"]:
-		var zid := int(e[0])
+	var zs: PackedFloat32Array = o["z"]
+	var k := 0
+	while k + 6 < zs.size():
+		var zid := int(zs[k])
 		var z: Zombie = by_id.get(zid)
 		if z == null:
 			z = Zombie.new(zid)
-			z.rpos = Vector2(e[1], e[2])
-		z.pos = Vector2(e[1], e[2])
-		z.face = Vector2(e[3], e[4])
-		z.chase = float(e[5])
-		z.down = float(e[6])
-		z.climb = float(e[7])
+			z.rpos = Vector2(zs[k + 1], zs[k + 2])
+		z.pos = Vector2(zs[k + 1], zs[k + 2])
+		z.face = Vector2(zs[k + 3], zs[k + 4])
+		var fl := int(zs[k + 5])
+		z.chase = 1.0 if fl & 1 else 0.0
+		z.down = 1.0 if fl & 2 else 0.0
+		z.climb = zs[k + 6]
 		next.append(z)
+		k += 7
 	zombies = next
+	for s in o.get("sh", []):
+		var dup := false
+		for e in shots:
+			if is_equal_approx(e[2], s[2]) and is_equal_approx(e[3], s[3]):
+				dup = true
+		if not dup:
+			shots.append([s[0], s[1], s[2], s[3], 0.08])
+
+## Клиент: принять события
+func apply_events(o: Dictionary, local_pid: int) -> void:
+	for e in o.get("p", []):
+		var pid := int(e["id"])
+		var p := player(pid)
+		if p == null:
+			p = Player.new(pid)
+			p.pos = Vector2(e["x"], e["y"])
+			p.rpos = p.pos
+			players.append(p)
+		var keep_pos := p.pos
+		var keep_face := p.face
+		var keep_climb := p.climb
+		var keep_fs := p.force_seq
+		player_from(e, p)
+		if pid == local_pid and int(e.get("fs", 0)) == keep_fs:
+			p.pos = keep_pos
+			p.face = keep_face
+			p.climb = keep_climb
 	for e in o.get("tc", []):
 		var i := int(e[0])
 		var nt := int(e[1])
 		if world.t_at(i) != nt:
 			world.events.append([i, world.t_at(i), nt])
 			world.tiles[i] = nt
+			world.cost_dirty = true
 		var b := int(e[2])
 		if b > 0:
 			world.barr[i] = b
@@ -1105,7 +1280,5 @@ func apply_snapshot(o: Dictionary) -> void:
 		world.vis_dirty[int(k)] = true
 	for e in o.get("fx", []):
 		fx.append(e)
-	for s in o.get("sh", []):
-		shots.append([s[0], s[1], s[2], s[3], 0.08])
 	if o.has("cp"):
 		corpses = o["cp"]

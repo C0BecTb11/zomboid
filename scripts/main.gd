@@ -15,8 +15,23 @@ func _ready() -> void:
 		elif a.begins_with("--shot="):
 			shot = a.substr(7)
 	get_tree().set_auto_accept_quit(false)
+	for a in OS.get_cmdline_user_args():
+		if a.begins_with("--nettest="):
+			var nt = load("res://scripts/nettest.gd").new()
+			nt.role = a.substr(10)
+			nt.main = self
+			add_child(nt)
+			if nt.role == "host":
+				Net.nick = "ТестХост"
+				_start(GameScreen.Mode.HOST, GameState.new_game(777))
+				Net.host(screen.adv_info)
+			else:
+				Net.nick = "ТестДруг"
+			return
 	if demo == "menu":
 		_show_menu()
+	elif demo == "friends":
+		_show_friends()
 	elif demo != "":
 		_start(GameScreen.Mode.SOLO, Demo.create(demo))
 		screen.demo = demo
@@ -25,6 +40,7 @@ func _ready() -> void:
 		_show_menu()
 
 func _process(_dt: float) -> void:
+	_process_menu()
 	if shot != "":
 		shot_frames += 1
 		if shot_frames == 45:
@@ -57,11 +73,14 @@ func _btn(text: String, color: Color, cb: Callable) -> Button:
 	b.pressed.connect(cb)
 	return b
 
-func _show_menu() -> void:
-	if screen != null:
-		screen.queue_free()
-		screen = null
-	Net.close()
+func _clear_menu() -> void:
+	Net.stop_scan()
+	if menu != null:
+		menu.queue_free()
+		menu = null
+
+func _menu_base() -> VBoxContainer:
+	_clear_menu()
 	menu = Control.new()
 	menu.set_anchors_preset(Control.PRESET_FULL_RECT)
 	add_child(menu)
@@ -80,39 +99,114 @@ func _show_menu() -> void:
 	var col := VBoxContainer.new()
 	col.add_theme_constant_override("separation", 10)
 	center.add_child(col)
-	var title := Label.new()
-	title.text = "МЁРТВЫЙ ГОРОД"
-	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	title.add_theme_font_size_override("font_size", 34)
-	title.add_theme_color_override("font_color", Color(0.82, 0.25, 0.25))
-	col.add_child(title)
-	var sub := Label.new()
-	sub.text = "Вот так ты и умрёшь. Вопрос — когда."
-	sub.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	sub.add_theme_color_override("font_color", Color(0.56, 0.56, 0.56))
-	col.add_child(sub)
+	return col
+
+func _label(text: String, size: int, color: Color) -> Label:
+	var l := Label.new()
+	l.text = text
+	l.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	l.add_theme_font_size_override("font_size", size)
+	l.add_theme_color_override("font_color", color)
+	return l
+
+func _show_menu() -> void:
+	if screen != null:
+		screen.queue_free()
+		screen = null
+	Net.close()
+	var col := _menu_base()
+	col.add_child(_label("МЁРТВЫЙ ГОРОД", 34, Color(0.82, 0.25, 0.25)))
+	col.add_child(_label("Вот так ты и умрёшь. Вопрос — когда.", 16, Color(0.56, 0.56, 0.56)))
 	var has_save := Saves.load_game() != null
 	if has_save:
 		col.add_child(_btn("Продолжить", Color(0.18, 0.42, 0.23), func(): _start(GameScreen.Mode.SOLO, Saves.load_game())))
 	col.add_child(_btn("Новая игра", Color(0.23, 0.29, 0.35), _new_game.bind(has_save)))
-	col.add_child(_btn("Пригласить друга в свой мир (Wi‑Fi)" if has_save else "Создать игру на двоих (Wi‑Fi)", Color(0.35, 0.29, 0.16), _host))
+	col.add_child(_btn("Играть с другом", Color(0.35, 0.29, 0.16), _show_friends))
+
+# ---------- вкладка «Играть с другом» ----------
+var server_box: VBoxContainer
+var scan_label: Label
+var nick_edit: LineEdit
+var _shown_servers := ""
+
+func _show_friends() -> void:
+	var col := _menu_base()
+	col.add_child(_label("ИГРАТЬ С ДРУГОМ", 26, Color(0.9, 0.75, 0.4)))
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 8)
+	var nl := Label.new()
+	nl.text = "Твоё имя:"
+	nl.add_theme_color_override("font_color", Color(0.7, 0.7, 0.7))
+	row.add_child(nl)
+	nick_edit = LineEdit.new()
+	nick_edit.text = Net.nick
+	nick_edit.max_length = 18
+	nick_edit.custom_minimum_size = Vector2(230, 40)
+	nick_edit.text_changed.connect(func(t): Net.nick = t.strip_edges() if t.strip_edges() != "" else Net.nick; Net.save_profile())
+	row.add_child(nick_edit)
+	col.add_child(row)
+	var has_save := Saves.load_game() != null
+	col.add_child(_btn("Открыть мой мир для друга" if has_save else "Создать мир для друга", Color(0.18, 0.42, 0.23), _host))
+	col.add_child(_label("Миры в твоей Wi‑Fi сети:", 14, Color(0.7, 0.7, 0.7)))
+	server_box = VBoxContainer.new()
+	server_box.add_theme_constant_override("separation", 8)
+	col.add_child(server_box)
+	scan_label = _label("Ищу… (друг должен открыть свой мир)", 13, Color(0.5, 0.5, 0.5))
+	server_box.add_child(scan_label)
+	_shown_servers = ""
+	# ручной ввод на случай, если поиск не сработал
+	var manual := HBoxContainer.new()
+	manual.add_theme_constant_override("separation", 8)
 	ip_edit = LineEdit.new()
-	ip_edit.placeholder_text = "IP друга, например 192.168.0.12"
-	ip_edit.custom_minimum_size = Vector2(320, 44)
-	ip_edit.virtual_keyboard_type = LineEdit.KEYBOARD_TYPE_NUMBER_DECIMAL
+	ip_edit.placeholder_text = "или IP вручную: 192.168.0.12"
+	ip_edit.custom_minimum_size = Vector2(230, 44)
+	ip_edit.virtual_keyboard_type = LineEdit.KEYBOARD_TYPE_URL
+	ip_edit.text_changed.connect(_filter_ip)
 	var cfg := ConfigFile.new()
 	if cfg.load("user://settings.cfg") == OK:
 		ip_edit.text = cfg.get_value("net", "ip", "")
-	col.add_child(ip_edit)
-	col.add_child(_btn("Подключиться к другу", Color(0.16, 0.29, 0.42), _join))
-	var info := Label.new()
-	info.text = "Для игры вдвоём оба телефона должны быть в одной Wi‑Fi сети\n(или один раздаёт точку доступа). Хост видит свой IP внизу экрана."
-	info.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	info.add_theme_font_size_override("font_size", 12)
-	info.add_theme_color_override("font_color", Color(0.5, 0.5, 0.5))
-	col.add_child(info)
+	manual.add_child(ip_edit)
+	var go := _btn("Войти", Color(0.16, 0.29, 0.42), func(): _join(ip_edit.text.strip_edges()))
+	go.custom_minimum_size = Vector2(82, 44)
+	manual.add_child(go)
+	col.add_child(manual)
+	col.add_child(_btn("Назад", Color(0.22, 0.22, 0.24), _show_menu))
+	col.add_child(_label("Оба телефона — в одной Wi‑Fi сети (или один раздаёт точку доступа).", 12, Color(0.5, 0.5, 0.5)))
+	Net.start_scan()
 
-var _confirm: ConfirmationDialog
+func _filter_ip(t: String) -> void:
+	var out := ""
+	for ch in t.replace(",", "."):
+		if ch == "." or (ch >= "0" and ch <= "9"):
+			out += ch
+	if out != t:
+		var pos := ip_edit.caret_column
+		ip_edit.text = out
+		ip_edit.caret_column = mini(pos, out.length())
+
+func _process_menu() -> void:
+	if server_box == null or not is_instance_valid(server_box) or Net.scan_sock == null:
+		return
+	var keys := Net.servers.keys()
+	keys.sort()
+	var sig := ""
+	for ip in keys:
+		var inf: Dictionary = Net.servers[ip]["info"]
+		sig += "%s|%s|%s|%s;" % [ip, inf.get("name", ""), inf.get("day", 1), inf.get("busy", false)]
+	if sig == _shown_servers:
+		return
+	_shown_servers = sig
+	for c in server_box.get_children():
+		if c != scan_label:
+			c.queue_free()
+	scan_label.visible = keys.is_empty()
+	for ip in keys:
+		var inf2: Dictionary = Net.servers[ip]["info"]
+		var busy: bool = inf2.get("busy", false)
+		var text := "%s  ·  день %d%s" % [inf2.get("name", "Мир"), int(inf2.get("day", 1)), "  ·  занято" if busy else ""]
+		var b := _btn(text, Color(0.25, 0.25, 0.27) if busy else Color(0.16, 0.36, 0.5), _join.bind(str(ip)))
+		b.disabled = busy
+		server_box.add_child(b)
 
 func _new_game(has_save: bool) -> void:
 	if not has_save:
@@ -126,26 +220,28 @@ func _new_game(has_save: bool) -> void:
 	menu.add_child(_confirm)
 	_confirm.popup_centered()
 
+var _confirm: ConfirmationDialog
+
 func _host() -> void:
 	var g := Saves.load_game()
-	Net.host()
 	_start(GameScreen.Mode.HOST, g)
+	Net.host(screen.adv_info)
 
-func _join() -> void:
-	var ip := ip_edit.text.strip_edges()
-	if ip == "":
-		ip_edit.placeholder_text = "Сначала введи IP"
+func _join(ip: String) -> void:
+	if ip == "" or ip.split(".").size() != 4:
+		if ip_edit != null and is_instance_valid(ip_edit):
+			ip_edit.text = ""
+			ip_edit.placeholder_text = "Нужен IP вида 192.168.0.12"
 		return
 	var cfg := ConfigFile.new()
+	cfg.load("user://settings.cfg")
 	cfg.set_value("net", "ip", ip)
 	cfg.save("user://settings.cfg")
 	Net.join(ip)
 	_start(GameScreen.Mode.CLIENT, null)
 
 func _start(mode: int, g: GameState) -> void:
-	if menu != null:
-		menu.queue_free()
-		menu = null
+	_clear_menu()
 	if mode != GameScreen.Mode.CLIENT:
 		if g == null:
 			g = GameState.new_game(int(Time.get_unix_time_from_system()))

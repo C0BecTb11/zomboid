@@ -388,6 +388,12 @@ func _overlays(g: GameState, me: GameState.Player, vr: Rect2) -> void:
 		draw_circle(s, r + 4, Color(0.06, 0.07, 0.08, 0.7))
 		draw_arc(s, r, -PI / 2, -PI / 2 + TAU * p.ta_progress(), 32, Color(0.94, 0.88, 0.63), 4.0, true)
 		_text(s + Vector2(0, -r - 9), p.ta_name, 11, Color.WHITE, HORIZONTAL_ALIGNMENT_CENTER, true)
+	for p in g.players:
+		if p.dead or not p.connected or p.id == me.id:
+			continue
+		var nm: String = p.name if p.name != "" else ("Хост" if p.id == 0 else "Друг")
+		var sp: Vector2 = screen.view.project(Vector3(p.rpos.x, 2.05, p.rpos.y))
+		_text(sp, nm, 12, Color(0.75, 0.9, 1.0), HORIZONTAL_ALIGNMENT_CENTER, true)
 	draw_texture_rect(vignette, vr, false)
 	var low := 0.0
 	if me.hp < 30.0 and not me.dead:
@@ -470,8 +476,8 @@ func _hud(g: GameState, me: GameState.Player) -> void:
 		_rr(Rect2(W / 2 - mw / 2, ty - 16, mw, 22), 11, Color(0.055, 0.07, 0.085, 0.6 * a))
 		_text(Vector2(W / 2, ty), msg[0], 13, Color(1, 1, 1, a), HORIZONTAL_ALIGNMENT_CENTER)
 		ty += 26
-	if screen.mode == GameScreen.Mode.HOST and not screen.init_sent:
-		_text(Vector2(W / 2, H - 14), "Ждём друга. Твой IP: " + Net.local_ip(), 12, Color(0.69, 0.82, 1.0), HORIZONTAL_ALIGNMENT_CENTER, true)
+	if screen.mode == GameScreen.Mode.HOST and screen.friend_pid < 0:
+		_text(Vector2(W / 2, H - 14), "Мир открыт для друга — он увидит его во вкладке «Играть с другом»  (IP: %s)" % Net.local_ip(), 12, Color(0.69, 0.82, 1.0), HORIZONTAL_ALIGNMENT_CENTER, true)
 	# джойстик
 	if joy_id >= 0:
 		draw_circle(joy_base, 62, Color(1, 1, 1, 0.19))
