@@ -1,0 +1,210 @@
+Command line invocation:
+    /Applications/Xcode_16.4.app/Contents/Developer/usr/bin/xcodebuild -project zomboid.xcodeproj -scheme zomboid -configuration Debug -sdk iphonesimulator -destination "generic/platform=iOS Simulator" -derivedDataPath dd ARCHS=x86_64 ONLY_ACTIVE_ARCH=NO EXCLUDED_ARCHS=arm64 CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO build
+
+Build settings from command line:
+    ARCHS = x86_64
+    CODE_SIGNING_ALLOWED = NO
+    CODE_SIGNING_REQUIRED = NO
+    EXCLUDED_ARCHS = arm64
+    ONLY_ACTIVE_ARCH = NO
+    SDKROOT = iphonesimulator18.5
+
+ComputePackagePrebuildTargetDependencyGraph
+
+Prepare packages
+
+CreateBuildRequest
+
+SendProjectDescription
+
+CreateBuildOperation
+
+ComputeTargetDependencyGraph
+note: Building targets in dependency order
+note: Target dependency graph (1 target)
+    Target 'zomboid' in project 'zomboid' (no dependencies)
+
+GatherProvisioningInputs
+
+CreateBuildDescription
+
+ExecuteExternalTool /Applications/Xcode_16.4.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/clang -v -E -dM -arch x86_64 -isysroot /Applications/Xcode_16.4.app/Contents/Developer/Platforms/iPhoneSimulator.platform/Developer/SDKs/iPhoneSimulator18.5.sdk -x c++ -c /dev/null
+
+ExecuteExternalTool /Applications/Xcode_16.4.app/Contents/Developer/usr/bin/ibtool --version --output-format xml1
+
+ExecuteExternalTool /Applications/Xcode_16.4.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/clang -v -E -dM -isysroot /Applications/Xcode_16.4.app/Contents/Developer/Platforms/iPhoneSimulator.platform/Developer/SDKs/iPhoneSimulator18.5.sdk -x c -c /dev/null
+
+ExecuteExternalTool /Applications/Xcode_16.4.app/Contents/Developer/usr/bin/actool --print-asset-tag-combinations --output-format xml1 /Users/runner/work/zomboid/zomboid/build/ios/zomboid/Images.xcassets
+
+ExecuteExternalTool /Applications/Xcode_16.4.app/Contents/Developer/usr/bin/actool --version --output-format xml1
+
+ExecuteExternalTool /Applications/Xcode_16.4.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/ld -version_details
+
+ExecuteExternalTool /Applications/Xcode_16.4.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/clang -v -E -dM -arch x86_64 -isysroot /Applications/Xcode_16.4.app/Contents/Developer/Platforms/iPhoneSimulator.platform/Developer/SDKs/iPhoneSimulator18.5.sdk -x c -c /dev/null
+
+Build description signature: ce3d1d4f8440912a9b9fca8380de116d
+Build description path: /Users/runner/work/zomboid/zomboid/build/ios/dd/Build/Intermediates.noindex/XCBuildData/ce3d1d4f8440912a9b9fca8380de116d.xcbuilddata
+CreateBuildDirectory /Users/runner/work/zomboid/zomboid/build/ios/dd/Build/Products
+    cd /Users/runner/work/zomboid/zomboid/build/ios/zomboid.xcodeproj
+    builtin-create-build-directory /Users/runner/work/zomboid/zomboid/build/ios/dd/Build/Products
+
+CreateBuildDirectory /Users/runner/work/zomboid/zomboid/build/ios/dd/Build/Intermediates.noindex
+    cd /Users/runner/work/zomboid/zomboid/build/ios/zomboid.xcodeproj
+    builtin-create-build-directory /Users/runner/work/zomboid/zomboid/build/ios/dd/Build/Intermediates.noindex
+
+ClangStatCache /Applications/Xcode_16.4.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/clang-stat-cache /Applications/Xcode_16.4.app/Contents/Developer/Platforms/iPhoneSimulator.platform/Developer/SDKs/iPhoneSimulator18.5.sdk /Users/runner/work/zomboid/zomboid/build/ios/dd/SDKStatCaches.noindex/iphonesimulator18.5-22F76-96ae0914227b19deccb34b33ba7b5dea.sdkstatcache
+    cd /Users/runner/work/zomboid/zomboid/build/ios/zomboid.xcodeproj
+    /Applications/Xcode_16.4.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/clang-stat-cache /Applications/Xcode_16.4.app/Contents/Developer/Platforms/iPhoneSimulator.platform/Developer/SDKs/iPhoneSimulator18.5.sdk -o /Users/runner/work/zomboid/zomboid/build/ios/dd/SDKStatCaches.noindex/iphonesimulator18.5-22F76-96ae0914227b19deccb34b33ba7b5dea.sdkstatcache
+
+CreateBuildDirectory /Users/runner/work/zomboid/zomboid/build/ios/dd/Build/Products/Debug-iphonesimulator
+    cd /Users/runner/work/zomboid/zomboid/build/ios/zomboid.xcodeproj
+    builtin-create-build-directory /Users/runner/work/zomboid/zomboid/build/ios/dd/Build/Products/Debug-iphonesimulator
+
+WriteAuxiliaryFile /Users/runner/work/zomboid/zomboid/build/ios/dd/Build/Intermediates.noindex/zomboid.build/Debug-iphonesimulator/zomboid-5ac8adccc37d5d3d9f8aeb0b0115f65e-VFS-iphonesimulator/all-product-headers.yaml
+    cd /Users/runner/work/zomboid/zomboid/build/ios/zomboid.xcodeproj
+    write-file /Users/runner/work/zomboid/zomboid/build/ios/dd/Build/Intermediates.noindex/zomboid.build/Debug-iphonesimulator/zomboid-5ac8adccc37d5d3d9f8aeb0b0115f65e-VFS-iphonesimulator/all-product-headers.yaml
+
+CreateBuildDirectory /Users/runner/work/zomboid/zomboid/build/ios/dd/Build/Intermediates.noindex/EagerLinkingTBDs/Debug-iphonesimulator
+    cd /Users/runner/work/zomboid/zomboid/build/ios/zomboid.xcodeproj
+    builtin-create-build-directory /Users/runner/work/zomboid/zomboid/build/ios/dd/Build/Intermediates.noindex/EagerLinkingTBDs/Debug-iphonesimulator
+
+ProcessXCFramework /Users/runner/work/zomboid/zomboid/build/ios/zomboid.xcframework /Users/runner/work/zomboid/zomboid/build/ios/dd/Build/Products/Debug-iphonesimulator/libgodot.a ios simulator
+    cd /Users/runner/work/zomboid/zomboid/build/ios/zomboid.xcodeproj
+    builtin-process-xcframework --xcframework /Users/runner/work/zomboid/zomboid/build/ios/zomboid.xcframework --platform ios --environment simulator --target-path /Users/runner/work/zomboid/zomboid/build/ios/dd/Build/Products/Debug-iphonesimulator
+
+ProcessXCFramework /Users/runner/work/zomboid/zomboid/build/ios/MoltenVK.xcframework /Users/runner/work/zomboid/zomboid/build/ios/dd/Build/Products/Debug-iphonesimulator/libMoltenVK.a ios simulator
+    cd /Users/runner/work/zomboid/zomboid/build/ios/zomboid.xcodeproj
+    builtin-process-xcframework --xcframework /Users/runner/work/zomboid/zomboid/build/ios/MoltenVK.xcframework --platform ios --environment simulator --target-path /Users/runner/work/zomboid/zomboid/build/ios/dd/Build/Products/Debug-iphonesimulator
+
+WriteAuxiliaryFile /Users/runner/work/zomboid/zomboid/build/ios/dd/Build/Intermediates.noindex/zomboid.build/Debug-iphonesimulator/zomboid.build/zomboid.hmap (in target 'zomboid' from project 'zomboid')
+    cd /Users/runner/work/zomboid/zomboid/build/ios
+    write-file /Users/runner/work/zomboid/zomboid/build/ios/dd/Build/Intermediates.noindex/zomboid.build/Debug-iphonesimulator/zomboid.build/zomboid.hmap
+
+WriteAuxiliaryFile /Users/runner/work/zomboid/zomboid/build/ios/dd/Build/Intermediates.noindex/zomboid.build/Debug-iphonesimulator/zomboid.build/zomboid.DependencyStaticMetadataFileList (in target 'zomboid' from project 'zomboid')
+    cd /Users/runner/work/zomboid/zomboid/build/ios
+    write-file /Users/runner/work/zomboid/zomboid/build/ios/dd/Build/Intermediates.noindex/zomboid.build/Debug-iphonesimulator/zomboid.build/zomboid.DependencyStaticMetadataFileList
+
+WriteAuxiliaryFile /Users/runner/work/zomboid/zomboid/build/ios/dd/Build/Intermediates.noindex/zomboid.build/Debug-iphonesimulator/zomboid.build/zomboid.DependencyMetadataFileList (in target 'zomboid' from project 'zomboid')
+    cd /Users/runner/work/zomboid/zomboid/build/ios
+    write-file /Users/runner/work/zomboid/zomboid/build/ios/dd/Build/Intermediates.noindex/zomboid.build/Debug-iphonesimulator/zomboid.build/zomboid.DependencyMetadataFileList
+
+WriteAuxiliaryFile /Users/runner/work/zomboid/zomboid/build/ios/dd/Build/Intermediates.noindex/zomboid.build/Debug-iphonesimulator/zomboid.build/zomboid-project-headers.hmap (in target 'zomboid' from project 'zomboid')
+    cd /Users/runner/work/zomboid/zomboid/build/ios
+    write-file /Users/runner/work/zomboid/zomboid/build/ios/dd/Build/Intermediates.noindex/zomboid.build/Debug-iphonesimulator/zomboid.build/zomboid-project-headers.hmap
+
+WriteAuxiliaryFile /Users/runner/work/zomboid/zomboid/build/ios/dd/Build/Intermediates.noindex/zomboid.build/Debug-iphonesimulator/zomboid.build/zomboid-own-target-headers.hmap (in target 'zomboid' from project 'zomboid')
+    cd /Users/runner/work/zomboid/zomboid/build/ios
+    write-file /Users/runner/work/zomboid/zomboid/build/ios/dd/Build/Intermediates.noindex/zomboid.build/Debug-iphonesimulator/zomboid.build/zomboid-own-target-headers.hmap
+
+WriteAuxiliaryFile /Users/runner/work/zomboid/zomboid/build/ios/dd/Build/Intermediates.noindex/zomboid.build/Debug-iphonesimulator/zomboid.build/zomboid-generated-files.hmap (in target 'zomboid' from project 'zomboid')
+    cd /Users/runner/work/zomboid/zomboid/build/ios
+    write-file /Users/runner/work/zomboid/zomboid/build/ios/dd/Build/Intermediates.noindex/zomboid.build/Debug-iphonesimulator/zomboid.build/zomboid-generated-files.hmap
+
+WriteAuxiliaryFile /Users/runner/work/zomboid/zomboid/build/ios/dd/Build/Intermediates.noindex/zomboid.build/Debug-iphonesimulator/zomboid.build/zomboid-all-target-headers.hmap (in target 'zomboid' from project 'zomboid')
+    cd /Users/runner/work/zomboid/zomboid/build/ios
+    write-file /Users/runner/work/zomboid/zomboid/build/ios/dd/Build/Intermediates.noindex/zomboid.build/Debug-iphonesimulator/zomboid.build/zomboid-all-target-headers.hmap
+
+WriteAuxiliaryFile /Users/runner/work/zomboid/zomboid/build/ios/dd/Build/Intermediates.noindex/zomboid.build/Debug-iphonesimulator/zomboid.build/zomboid-all-non-framework-target-headers.hmap (in target 'zomboid' from project 'zomboid')
+    cd /Users/runner/work/zomboid/zomboid/build/ios
+    write-file /Users/runner/work/zomboid/zomboid/build/ios/dd/Build/Intermediates.noindex/zomboid.build/Debug-iphonesimulator/zomboid.build/zomboid-all-non-framework-target-headers.hmap
+
+WriteAuxiliaryFile /Users/runner/work/zomboid/zomboid/build/ios/dd/Build/Intermediates.noindex/zomboid.build/Debug-iphonesimulator/zomboid.build/Objects-normal/x86_64/zomboid.LinkFileList (in target 'zomboid' from project 'zomboid')
+    cd /Users/runner/work/zomboid/zomboid/build/ios
+    write-file /Users/runner/work/zomboid/zomboid/build/ios/dd/Build/Intermediates.noindex/zomboid.build/Debug-iphonesimulator/zomboid.build/Objects-normal/x86_64/zomboid.LinkFileList
+
+WriteAuxiliaryFile /Users/runner/work/zomboid/zomboid/build/ios/dd/Build/Intermediates.noindex/zomboid.build/Debug-iphonesimulator/zomboid.build/Objects-normal/x86_64/82b82416624d2658e5098eb0a28c15c5-common-args.resp (in target 'zomboid' from project 'zomboid')
+    cd /Users/runner/work/zomboid/zomboid/build/ios
+    write-file /Users/runner/work/zomboid/zomboid/build/ios/dd/Build/Intermediates.noindex/zomboid.build/Debug-iphonesimulator/zomboid.build/Objects-normal/x86_64/82b82416624d2658e5098eb0a28c15c5-common-args.resp
+-target x86_64-apple-ios14.0-simulator '-std=gnu++11' '-stdlib=libc++' -fmodules -fno-cxx-modules -gmodules '-fmodules-cache-path=/Users/runner/work/zomboid/zomboid/build/ios/dd/ModuleCache.noindex' '-D_LIBCPP_HARDENING_MODE=_LIBCPP_HARDENING_MODE_DEBUG' -fpascal-strings -O0 -isysroot /Applications/Xcode_16.4.app/Contents/Developer/Platforms/iPhoneSimulator.platform/Developer/SDKs/iPhoneSimulator18.5.sdk -fasm-blocks -g -fvisibility-inlines-hidden -iquote /Users/runner/work/zomboid/zomboid/build/ios/dd/Build/Intermediates.noindex/zomboid.build/Debug-iphonesimulator/zomboid.build/zomboid-generated-files.hmap -I/Users/runner/work/zomboid/zomboid/build/ios/dd/Build/Intermediates.noindex/zomboid.build/Debug-iphonesimulator/zomboid.build/zomboid-own-target-headers.hmap -I/Users/runner/work/zomboid/zomboid/build/ios/dd/Build/Intermediates.noindex/zomboid.build/Debug-iphonesimulator/zomboid.build/zomboid-all-target-headers.hmap -iquote /Users/runner/work/zomboid/zomboid/build/ios/dd/Build/Intermediates.noindex/zomboid.build/Debug-iphonesimulator/zomboid.build/zomboid-project-headers.hmap -I/Users/runner/work/zomboid/zomboid/build/ios/dd/Build/Products/Debug-iphonesimulator/include -I/Users/runner/work/zomboid/zomboid/build/ios/dd/Build/Intermediates.noindex/zomboid.build/Debug-iphonesimulator/zomboid.build/DerivedSources-normal/x86_64 -I/Users/runner/work/zomboid/zomboid/build/ios/dd/Build/Intermediates.noindex/zomboid.build/Debug-iphonesimulator/zomboid.build/DerivedSources/x86_64 -I/Users/runner/work/zomboid/zomboid/build/ios/dd/Build/Intermediates.noindex/zomboid.build/Debug-iphonesimulator/zomboid.build/DerivedSources -F/Users/runner/work/zomboid/zomboid/build/ios/dd/Build/Products/Debug-iphonesimulator -F. -FMoltenVK.xcframework -Fdd -Fzomboid -Fzomboid.xcframework -FMoltenVK.xcframework/ios-arm64 -FMoltenVK.xcframework/ios-arm64_x86_64-maccatalyst -FMoltenVK.xcframework/ios-arm64_x86_64-simulator -Fdd/Build -Fdd/Logs -Fzomboid/dylibs -Fzomboid.xcframework/ios-arm64 -Fzomboid.xcframework/ios-arm64_x86_64-simulator -Fdd/Build/Intermediates.noindex -Fdd/Logs/Build -Fdd/Logs/Launch -Fdd/Logs/Localization -Fdd/Logs/Package -Fdd/Logs/Test -Fdd/Build/Intermediates.noindex/XCBuildData -Fdd/Build/Intermediates.noindex/XCBuildData/PIFCache -Fdd/Build/Intermediates.noindex/XCBuildData/ce3d1d4f8440912a9b9fca8380de116d.xcbuilddata -Fdd/Build/Intermediates.noindex/XCBuildData/PIFCache/project -Fdd/Build/Intermediates.noindex/XCBuildData/PIFCache/target -Fdd/Build/Intermediates.noindex/XCBuildData/PIFCache/workspace -Fdd/Build/Intermediates.noindex/XCBuildData/ce3d1d4f8440912a9b9fca8380de116d.xcbuilddata/attachments
+
+MkDir /Users/runner/work/zomboid/zomboid/build/ios/dd/Build/Products/Debug-iphonesimulator/zomboid.app (in target 'zomboid' from project 'zomboid')
+    cd /Users/runner/work/zomboid/zomboid/build/ios
+    /bin/mkdir -p /Users/runner/work/zomboid/zomboid/build/ios/dd/Build/Products/Debug-iphonesimulator/zomboid.app
+
+MkDir /Users/runner/work/zomboid/zomboid/build/ios/dd/Build/Intermediates.noindex/zomboid.build/Debug-iphonesimulator/zomboid.build/assetcatalog_output/unthinned (in target 'zomboid' from project 'zomboid')
+    cd /Users/runner/work/zomboid/zomboid/build/ios
+    /bin/mkdir -p /Users/runner/work/zomboid/zomboid/build/ios/dd/Build/Intermediates.noindex/zomboid.build/Debug-iphonesimulator/zomboid.build/assetcatalog_output/unthinned
+
+MkDir /Users/runner/work/zomboid/zomboid/build/ios/dd/Build/Intermediates.noindex/zomboid.build/Debug-iphonesimulator/zomboid.build/assetcatalog_output/thinned (in target 'zomboid' from project 'zomboid')
+    cd /Users/runner/work/zomboid/zomboid/build/ios
+    /bin/mkdir -p /Users/runner/work/zomboid/zomboid/build/ios/dd/Build/Intermediates.noindex/zomboid.build/Debug-iphonesimulator/zomboid.build/assetcatalog_output/thinned
+
+GenerateAssetSymbols /Users/runner/work/zomboid/zomboid/build/ios/zomboid/Images.xcassets (in target 'zomboid' from project 'zomboid')
+    cd /Users/runner/work/zomboid/zomboid/build/ios
+    /Applications/Xcode_16.4.app/Contents/Developer/usr/bin/actool /Users/runner/work/zomboid/zomboid/build/ios/zomboid/Images.xcassets --compile /Users/runner/work/zomboid/zomboid/build/ios/dd/Build/Products/Debug-iphonesimulator/zomboid.app --output-format human-readable-text --notices --warnings --export-dependency-info /Users/runner/work/zomboid/zomboid/build/ios/dd/Build/Intermediates.noindex/zomboid.build/Debug-iphonesimulator/zomboid.build/assetcatalog_dependencies --output-partial-info-plist /Users/runner/work/zomboid/zomboid/build/ios/dd/Build/Intermediates.noindex/zomboid.build/Debug-iphonesimulator/zomboid.build/assetcatalog_generated_info.plist --app-icon AppIcon --compress-pngs --enable-on-demand-resources YES --development-region en --target-device iphone --target-device ipad --minimum-deployment-target 14.0 --platform iphonesimulator --bundle-identifier com.c0bectb11.zomboid --generate-objc-asset-symbols /Users/runner/work/zomboid/zomboid/build/ios/dd/Build/Intermediates.noindex/zomboid.build/Debug-iphonesimulator/zomboid.build/DerivedSources/GeneratedAssetSymbols.h --generate-asset-symbol-index /Users/runner/work/zomboid/zomboid/build/ios/dd/Build/Intermediates.noindex/zomboid.build/Debug-iphonesimulator/zomboid.build/DerivedSources/GeneratedAssetSymbols-Index.plist
+/* com.apple.actool.compilation-results */
+/Users/runner/work/zomboid/zomboid/build/ios/dd/Build/Intermediates.noindex/zomboid.build/Debug-iphonesimulator/zomboid.build/DerivedSources/GeneratedAssetSymbols-Index.plist
+/Users/runner/work/zomboid/zomboid/build/ios/dd/Build/Intermediates.noindex/zomboid.build/Debug-iphonesimulator/zomboid.build/DerivedSources/GeneratedAssetSymbols.h
+
+
+CpResource /Users/runner/work/zomboid/zomboid/build/ios/dd/Build/Products/Debug-iphonesimulator/zomboid.app/zomboid.pck /Users/runner/work/zomboid/zomboid/build/ios/zomboid.pck (in target 'zomboid' from project 'zomboid')
+    cd /Users/runner/work/zomboid/zomboid/build/ios
+    builtin-copy -exclude .DS_Store -exclude CVS -exclude .svn -exclude .git -exclude .hg -resolve-src-symlinks /Users/runner/work/zomboid/zomboid/build/ios/zomboid.pck /Users/runner/work/zomboid/zomboid/build/ios/dd/Build/Products/Debug-iphonesimulator/zomboid.app
+
+CpResource /Users/runner/work/zomboid/zomboid/build/ios/dd/Build/Products/Debug-iphonesimulator/zomboid.app/PrivacyInfo.xcprivacy /Users/runner/work/zomboid/zomboid/build/ios/PrivacyInfo.xcprivacy (in target 'zomboid' from project 'zomboid')
+    cd /Users/runner/work/zomboid/zomboid/build/ios
+    builtin-copy -exclude .DS_Store -exclude CVS -exclude .svn -exclude .git -exclude .hg -resolve-src-symlinks /Users/runner/work/zomboid/zomboid/build/ios/PrivacyInfo.xcprivacy /Users/runner/work/zomboid/zomboid/build/ios/dd/Build/Products/Debug-iphonesimulator/zomboid.app
+
+CopyStringsFile /Users/runner/work/zomboid/zomboid/build/ios/dd/Build/Products/Debug-iphonesimulator/zomboid.app/en.lproj/InfoPlist.strings /Users/runner/work/zomboid/zomboid/build/ios/zomboid/en.lproj/InfoPlist.strings (in target 'zomboid' from project 'zomboid')
+    cd /Users/runner/work/zomboid/zomboid/build/ios
+    builtin-copyStrings --validate --outputencoding binary --outfilename InfoPlist.strings --outdir /Users/runner/work/zomboid/zomboid/build/ios/dd/Build/Products/Debug-iphonesimulator/zomboid.app/en.lproj -- /Users/runner/work/zomboid/zomboid/build/ios/zomboid/en.lproj/InfoPlist.strings
+/Users/runner/work/zomboid/zomboid/build/ios/zomboid/en.lproj/InfoPlist.strings:1:1: note: detected encoding of input file as Unicode (UTF-8) (in target 'zomboid' from project 'zomboid')
+
+CompileStoryboard /Users/runner/work/zomboid/zomboid/build/ios/zomboid/Launch\ Screen.storyboard (in target 'zomboid' from project 'zomboid')
+    cd /Users/runner/work/zomboid/zomboid/build/ios
+    /Applications/Xcode_16.4.app/Contents/Developer/usr/bin/ibtool --errors --warnings --notices --module zomboid --output-partial-info-plist /Users/runner/work/zomboid/zomboid/build/ios/dd/Build/Intermediates.noindex/zomboid.build/Debug-iphonesimulator/zomboid.build/Launch\ Screen-SBPartialInfo.plist --auto-activate-custom-fonts --target-device iphone --target-device ipad --minimum-deployment-target 14.0 --output-format human-readable-text /Users/runner/work/zomboid/zomboid/build/ios/zomboid/Launch\ Screen.storyboard --compilation-directory /Users/runner/work/zomboid/zomboid/build/ios/dd/Build/Intermediates.noindex/zomboid.build/Debug-iphonesimulator/zomboid.build
+
+CompileAssetCatalogVariant thinned /Users/runner/work/zomboid/zomboid/build/ios/dd/Build/Products/Debug-iphonesimulator/zomboid.app /Users/runner/work/zomboid/zomboid/build/ios/zomboid/Images.xcassets (in target 'zomboid' from project 'zomboid')
+    cd /Users/runner/work/zomboid/zomboid/build/ios
+    /Applications/Xcode_16.4.app/Contents/Developer/usr/bin/actool /Users/runner/work/zomboid/zomboid/build/ios/zomboid/Images.xcassets --compile /Users/runner/work/zomboid/zomboid/build/ios/dd/Build/Intermediates.noindex/zomboid.build/Debug-iphonesimulator/zomboid.build/assetcatalog_output/thinned --output-format human-readable-text --notices --warnings --export-dependency-info /Users/runner/work/zomboid/zomboid/build/ios/dd/Build/Intermediates.noindex/zomboid.build/Debug-iphonesimulator/zomboid.build/assetcatalog_dependencies_thinned --output-partial-info-plist /Users/runner/work/zomboid/zomboid/build/ios/dd/Build/Intermediates.noindex/zomboid.build/Debug-iphonesimulator/zomboid.build/assetcatalog_generated_info.plist_thinned --app-icon AppIcon --compress-pngs --enable-on-demand-resources YES --development-region en --target-device iphone --target-device ipad --minimum-deployment-target 14.0 --platform iphonesimulator
+/* com.apple.actool.compilation-results */
+/Users/runner/work/zomboid/zomboid/build/ios/dd/Build/Intermediates.noindex/zomboid.build/Debug-iphonesimulator/zomboid.build/assetcatalog_generated_info.plist_thinned
+/Users/runner/work/zomboid/zomboid/build/ios/dd/Build/Intermediates.noindex/zomboid.build/Debug-iphonesimulator/zomboid.build/assetcatalog_output/thinned/AppIcon60x60@2x.png
+/Users/runner/work/zomboid/zomboid/build/ios/dd/Build/Intermediates.noindex/zomboid.build/Debug-iphonesimulator/zomboid.build/assetcatalog_output/thinned/AppIcon76x76@2x~ipad.png
+/Users/runner/work/zomboid/zomboid/build/ios/dd/Build/Intermediates.noindex/zomboid.build/Debug-iphonesimulator/zomboid.build/assetcatalog_output/thinned/Assets.car
+
+
+CompileC /Users/runner/work/zomboid/zomboid/build/ios/dd/Build/Intermediates.noindex/zomboid.build/Debug-iphonesimulator/zomboid.build/Objects-normal/x86_64/dummy.o /Users/runner/work/zomboid/zomboid/build/ios/zomboid/dummy.cpp normal x86_64 c++ com.apple.compilers.llvm.clang.1_0.compiler (in target 'zomboid' from project 'zomboid')
+    cd /Users/runner/work/zomboid/zomboid/build/ios
+    
+    Using response file: /Users/runner/work/zomboid/zomboid/build/ios/dd/Build/Intermediates.noindex/zomboid.build/Debug-iphonesimulator/zomboid.build/Objects-normal/x86_64/82b82416624d2658e5098eb0a28c15c5-common-args.resp
+    
+    /Applications/Xcode_16.4.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/clang -x c++ -ivfsstatcache /Users/runner/work/zomboid/zomboid/build/ios/dd/SDKStatCaches.noindex/iphonesimulator18.5-22F76-96ae0914227b19deccb34b33ba7b5dea.sdkstatcache -fmessage-length\=0 -fdiagnostics-show-note-include-stack -fmacro-backtrace-limit\=0 -fno-color-diagnostics -fmodules-prune-interval\=86400 -fmodules-prune-after\=345600 -fbuild-session-file\=/Users/runner/work/zomboid/zomboid/build/ios/dd/ModuleCache.noindex/Session.modulevalidation -fmodules-validate-once-per-build-session -Wnon-modular-include-in-framework-module -Werror\=non-modular-include-in-framework-module -Wno-trigraphs -Wno-missing-field-initializers -Wno-missing-prototypes -Werror\=return-type -Werror\=deprecated-objc-isa-usage -Werror\=objc-root-class -Wno-non-virtual-dtor -Wno-overloaded-virtual -Wno-exit-time-destructors -Wno-missing-braces -Wparentheses -Wswitch -Wunused-function -Wno-unused-label -Wno-unused-parameter -Wunused-variable -Wunused-value -Wempty-body -Wuninitialized -Wno-unknown-pragmas -Wno-shadow -Wno-four-char-constants -Wno-conversion -Wconstant-conversion -Wint-conversion -Wbool-conversion -Wenum-conversion -Wno-float-conversion -Wno-non-literal-null-conversion -Wno-objc-literal-conversion -Wshorten-64-to-32 -Wno-newline-eof -Wno-c++11-extensions -Wno-implicit-fallthrough -fstrict-aliasing -Wdeprecated-declarations -Winvalid-offsetof -Wno-sign-conversion -Wno-infinite-recursion -Wno-move -Wno-comma -Wno-block-capture-autoreleasing -Wno-strict-prototypes -Wno-range-loop-analysis -Wno-semicolon-before-method-body -index-store-path /Users/runner/work/zomboid/zomboid/build/ios/dd/Index.noindex/DataStore @/Users/runner/work/zomboid/zomboid/build/ios/dd/Build/Intermediates.noindex/zomboid.build/Debug-iphonesimulator/zomboid.build/Objects-normal/x86_64/82b82416624d2658e5098eb0a28c15c5-common-args.resp -MMD -MT dependencies -MF /Users/runner/work/zomboid/zomboid/build/ios/dd/Build/Intermediates.noindex/zomboid.build/Debug-iphonesimulator/zomboid.build/Objects-normal/x86_64/dummy.d --serialize-diagnostics /Users/runner/work/zomboid/zomboid/build/ios/dd/Build/Intermediates.noindex/zomboid.build/Debug-iphonesimulator/zomboid.build/Objects-normal/x86_64/dummy.dia -c /Users/runner/work/zomboid/zomboid/build/ios/zomboid/dummy.cpp -o /Users/runner/work/zomboid/zomboid/build/ios/dd/Build/Intermediates.noindex/zomboid.build/Debug-iphonesimulator/zomboid.build/Objects-normal/x86_64/dummy.o -index-unit-output-path /zomboid.build/Debug-iphonesimulator/zomboid.build/Objects-normal/x86_64/dummy.o
+
+Ld /Users/runner/work/zomboid/zomboid/build/ios/dd/Build/Products/Debug-iphonesimulator/zomboid.app/zomboid normal (in target 'zomboid' from project 'zomboid')
+    cd /Users/runner/work/zomboid/zomboid/build/ios
+    /Applications/Xcode_16.4.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/clang++ -Xlinker -reproducible -target x86_64-apple-ios14.0-simulator -isysroot /Applications/Xcode_16.4.app/Contents/Developer/Platforms/iPhoneSimulator.platform/Developer/SDKs/iPhoneSimulator18.5.sdk -O0 -L/Users/runner/work/zomboid/zomboid/build/ios/dd/Build/Intermediates.noindex/EagerLinkingTBDs/Debug-iphonesimulator -L/Users/runner/work/zomboid/zomboid/build/ios/dd/Build/Products/Debug-iphonesimulator -L. -LMoltenVK.xcframework -Ldd -Lzomboid -Lzomboid.xcframework -LMoltenVK.xcframework/ios-arm64 -LMoltenVK.xcframework/ios-arm64_x86_64-maccatalyst -LMoltenVK.xcframework/ios-arm64_x86_64-simulator -Ldd/Build -Ldd/Logs -Lzomboid/dylibs -Lzomboid.xcframework/ios-arm64 -Lzomboid.xcframework/ios-arm64_x86_64-simulator -Ldd/Build/Intermediates.noindex -Ldd/Logs/Build -Ldd/Logs/Launch -Ldd/Logs/Localization -Ldd/Logs/Package -Ldd/Logs/Test -Ldd/Build/Intermediates.noindex/XCBuildData -Ldd/Build/Intermediates.noindex/XCBuildData/PIFCache -Ldd/Build/Intermediates.noindex/XCBuildData/ce3d1d4f8440912a9b9fca8380de116d.xcbuilddata -Ldd/Build/Intermediates.noindex/XCBuildData/PIFCache/project -Ldd/Build/Intermediates.noindex/XCBuildData/PIFCache/target -Ldd/Build/Intermediates.noindex/XCBuildData/PIFCache/workspace -Ldd/Build/Intermediates.noindex/XCBuildData/ce3d1d4f8440912a9b9fca8380de116d.xcbuilddata/attachments -F/Users/runner/work/zomboid/zomboid/build/ios/dd/Build/Intermediates.noindex/EagerLinkingTBDs/Debug-iphonesimulator -F/Users/runner/work/zomboid/zomboid/build/ios/dd/Build/Products/Debug-iphonesimulator -F. -FMoltenVK.xcframework -Fdd -Fzomboid -Fzomboid.xcframework -FMoltenVK.xcframework/ios-arm64 -FMoltenVK.xcframework/ios-arm64_x86_64-maccatalyst -FMoltenVK.xcframework/ios-arm64_x86_64-simulator -Fdd/Build -Fdd/Logs -Fzomboid/dylibs -Fzomboid.xcframework/ios-arm64 -Fzomboid.xcframework/ios-arm64_x86_64-simulator -Fdd/Build/Intermediates.noindex -Fdd/Logs/Build -Fdd/Logs/Launch -Fdd/Logs/Localization -Fdd/Logs/Package -Fdd/Logs/Test -Fdd/Build/Intermediates.noindex/XCBuildData -Fdd/Build/Intermediates.noindex/XCBuildData/PIFCache -Fdd/Build/Intermediates.noindex/XCBuildData/ce3d1d4f8440912a9b9fca8380de116d.xcbuilddata -Fdd/Build/Intermediates.noindex/XCBuildData/PIFCache/project -Fdd/Build/Intermediates.noindex/XCBuildData/PIFCache/target -Fdd/Build/Intermediates.noindex/XCBuildData/PIFCache/workspace -Fdd/Build/Intermediates.noindex/XCBuildData/ce3d1d4f8440912a9b9fca8380de116d.xcbuilddata/attachments -filelist /Users/runner/work/zomboid/zomboid/build/ios/dd/Build/Intermediates.noindex/zomboid.build/Debug-iphonesimulator/zomboid.build/Objects-normal/x86_64/zomboid.LinkFileList -Xlinker -rpath -Xlinker @executable_path/Frameworks -dead_strip -Xlinker -object_path_lto -Xlinker /Users/runner/work/zomboid/zomboid/build/ios/dd/Build/Intermediates.noindex/zomboid.build/Debug-iphonesimulator/zomboid.build/Objects-normal/x86_64/zomboid_lto.o -Xlinker -no_deduplicate -Xlinker -objc_abi_version -Xlinker 2 -Xlinker -dependency_info -Xlinker /Users/runner/work/zomboid/zomboid/build/ios/dd/Build/Intermediates.noindex/zomboid.build/Debug-iphonesimulator/zomboid.build/Objects-normal/x86_64/zomboid_dependency_info.dat -stdlib\=libc++ -lMoltenVK -lgodot -o /Users/runner/work/zomboid/zomboid/build/ios/dd/Build/Products/Debug-iphonesimulator/zomboid.app/zomboid
+
+LinkStoryboards (in target 'zomboid' from project 'zomboid')
+    cd /Users/runner/work/zomboid/zomboid/build/ios
+    /Applications/Xcode_16.4.app/Contents/Developer/usr/bin/ibtool --errors --warnings --notices --module zomboid --target-device iphone --target-device ipad --minimum-deployment-target 14.0 --output-format human-readable-text --link /Users/runner/work/zomboid/zomboid/build/ios/dd/Build/Products/Debug-iphonesimulator/zomboid.app /Users/runner/work/zomboid/zomboid/build/ios/dd/Build/Intermediates.noindex/zomboid.build/Debug-iphonesimulator/zomboid.build/Launch\ Screen.storyboardc
+
+LinkAssetCatalog /Users/runner/work/zomboid/zomboid/build/ios/zomboid/Images.xcassets (in target 'zomboid' from project 'zomboid')
+    cd /Users/runner/work/zomboid/zomboid/build/ios
+    builtin-linkAssetCatalog --thinned /Users/runner/work/zomboid/zomboid/build/ios/dd/Build/Intermediates.noindex/zomboid.build/Debug-iphonesimulator/zomboid.build/assetcatalog_output/thinned --thinned-dependencies /Users/runner/work/zomboid/zomboid/build/ios/dd/Build/Intermediates.noindex/zomboid.build/Debug-iphonesimulator/zomboid.build/assetcatalog_dependencies_thinned --thinned-info-plist-content /Users/runner/work/zomboid/zomboid/build/ios/dd/Build/Intermediates.noindex/zomboid.build/Debug-iphonesimulator/zomboid.build/assetcatalog_generated_info.plist_thinned --unthinned /Users/runner/work/zomboid/zomboid/build/ios/dd/Build/Intermediates.noindex/zomboid.build/Debug-iphonesimulator/zomboid.build/assetcatalog_output/unthinned --unthinned-dependencies /Users/runner/work/zomboid/zomboid/build/ios/dd/Build/Intermediates.noindex/zomboid.build/Debug-iphonesimulator/zomboid.build/assetcatalog_dependencies_unthinned --unthinned-info-plist-content /Users/runner/work/zomboid/zomboid/build/ios/dd/Build/Intermediates.noindex/zomboid.build/Debug-iphonesimulator/zomboid.build/assetcatalog_generated_info.plist_unthinned --output /Users/runner/work/zomboid/zomboid/build/ios/dd/Build/Products/Debug-iphonesimulator/zomboid.app --plist-output /Users/runner/work/zomboid/zomboid/build/ios/dd/Build/Intermediates.noindex/zomboid.build/Debug-iphonesimulator/zomboid.build/assetcatalog_generated_info.plist
+note: Emplaced /Users/runner/work/zomboid/zomboid/build/ios/dd/Build/Products/Debug-iphonesimulator/zomboid.app/Assets.car (in target 'zomboid' from project 'zomboid')
+note: Emplaced /Users/runner/work/zomboid/zomboid/build/ios/dd/Build/Products/Debug-iphonesimulator/zomboid.app/AppIcon76x76@2x~ipad.png (in target 'zomboid' from project 'zomboid')
+note: Emplaced /Users/runner/work/zomboid/zomboid/build/ios/dd/Build/Products/Debug-iphonesimulator/zomboid.app/AppIcon60x60@2x.png (in target 'zomboid' from project 'zomboid')
+
+ProcessInfoPlistFile /Users/runner/work/zomboid/zomboid/build/ios/dd/Build/Products/Debug-iphonesimulator/zomboid.app/Info.plist /Users/runner/work/zomboid/zomboid/build/ios/zomboid/zomboid-Info.plist (in target 'zomboid' from project 'zomboid')
+    cd /Users/runner/work/zomboid/zomboid/build/ios
+    builtin-infoPlistUtility /Users/runner/work/zomboid/zomboid/build/ios/zomboid/zomboid-Info.plist -producttype com.apple.product-type.application -genpkginfo /Users/runner/work/zomboid/zomboid/build/ios/dd/Build/Products/Debug-iphonesimulator/zomboid.app/PkgInfo -expandbuildsettings -format binary -platform iphonesimulator -additionalcontentfile /Users/runner/work/zomboid/zomboid/build/ios/dd/Build/Intermediates.noindex/zomboid.build/Debug-iphonesimulator/zomboid.build/Launch\ Screen-SBPartialInfo.plist -additionalcontentfile /Users/runner/work/zomboid/zomboid/build/ios/dd/Build/Intermediates.noindex/zomboid.build/Debug-iphonesimulator/zomboid.build/assetcatalog_generated_info.plist -o /Users/runner/work/zomboid/zomboid/build/ios/dd/Build/Products/Debug-iphonesimulator/zomboid.app/Info.plist
+
+GenerateDSYMFile /Users/runner/work/zomboid/zomboid/build/ios/dd/Build/Products/Debug-iphonesimulator/zomboid.app.dSYM /Users/runner/work/zomboid/zomboid/build/ios/dd/Build/Products/Debug-iphonesimulator/zomboid.app/zomboid (in target 'zomboid' from project 'zomboid')
+    cd /Users/runner/work/zomboid/zomboid/build/ios
+    /Applications/Xcode_16.4.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/dsymutil /Users/runner/work/zomboid/zomboid/build/ios/dd/Build/Products/Debug-iphonesimulator/zomboid.app/zomboid -o /Users/runner/work/zomboid/zomboid/build/ios/dd/Build/Products/Debug-iphonesimulator/zomboid.app.dSYM
+
+RegisterExecutionPolicyException /Users/runner/work/zomboid/zomboid/build/ios/dd/Build/Products/Debug-iphonesimulator/zomboid.app (in target 'zomboid' from project 'zomboid')
+    cd /Users/runner/work/zomboid/zomboid/build/ios
+    builtin-RegisterExecutionPolicyException /Users/runner/work/zomboid/zomboid/build/ios/dd/Build/Products/Debug-iphonesimulator/zomboid.app
+
+Validate /Users/runner/work/zomboid/zomboid/build/ios/dd/Build/Products/Debug-iphonesimulator/zomboid.app (in target 'zomboid' from project 'zomboid')
+    cd /Users/runner/work/zomboid/zomboid/build/ios
+    builtin-validationUtility /Users/runner/work/zomboid/zomboid/build/ios/dd/Build/Products/Debug-iphonesimulator/zomboid.app -infoplist-subpath Info.plist
+
+Touch /Users/runner/work/zomboid/zomboid/build/ios/dd/Build/Products/Debug-iphonesimulator/zomboid.app (in target 'zomboid' from project 'zomboid')
+    cd /Users/runner/work/zomboid/zomboid/build/ios
+    /usr/bin/touch -c /Users/runner/work/zomboid/zomboid/build/ios/dd/Build/Products/Debug-iphonesimulator/zomboid.app
+
+** BUILD SUCCEEDED **
+

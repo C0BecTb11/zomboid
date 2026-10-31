@@ -1,0 +1,148 @@
+Godot Engine v4.4.1.stable.official.49a5bc7b6 - https://godotengine.org
+
+Could not find version of build tools that matches Target SDK, using 35.0.0
+first_scan_filesystem: begin: Project initialization steps: 5
+	first_scan_filesystem: step 0: Scanning file structure...
+	first_scan_filesystem: step 1: Loading global class names...
+	first_scan_filesystem: step 2: Verifying GDExtensions...
+	first_scan_filesystem: step 3: Creating autoload scripts...
+	first_scan_filesystem: step 4: Initializing plugins...
+	first_scan_filesystem: step 5: Starting file scan...
+first_scan_filesystem: end
+export: begin: Exporting for iOS (Project Files Only) steps: 2
+	export: step 0: Making .pck
+savepack: begin: Packing steps: 102
+	savepack: step 2: Storing File: res://.godot/exported/133200997/export-3ad5c15c4f3250da0cc7c1af1770d85f-main.scn
+	savepack: step 7: Storing File: res://scripts/body.gdc
+	savepack: step 13: Storing File: res://scripts/character.gdc
+	savepack: step 18: Storing File: res://scripts/demo.gdc
+	savepack: step 24: Storing File: res://scripts/game.gdc
+	savepack: step 29: Storing File: res://scripts/game_screen.gdc
+	savepack: step 35: Storing File: res://scripts/hud.gdc
+	savepack: step 40: Storing File: res://scripts/icons.gdc
+	savepack: step 46: Storing File: res://scripts/items.gdc
+	savepack: step 52: Storing File: res://scripts/main.gdc
+	savepack: step 57: Storing File: res://scripts/mesher.gdc
+	savepack: step 63: Storing File: res://scripts/net.gdc
+	savepack: step 68: Storing File: res://scripts/saves.gdc
+	savepack: step 74: Storing File: res://scripts/world.gdc
+	savepack: step 79: Storing File: res://scripts/world_mesh.gdc
+	savepack: step 85: Storing File: res://scripts/world_view.gdc
+	savepack: step 90: Storing File: res://shaders/world.gdshader
+	savepack: step 96: Storing File: res://.godot/imported/icon.png-487276ed1e3a0c39cad0279d744ee560.ctex
+	savepack: step 96: Storing File: res://icon.png.import
+	savepack: step 96: Storing File: res://scenes/main.tscn.remap
+	savepack: step 96: Storing File: res://scripts/body.gd.remap
+	savepack: step 96: Storing File: res://scripts/character.gd.remap
+	savepack: step 96: Storing File: res://scripts/demo.gd.remap
+	savepack: step 96: Storing File: res://scripts/game.gd.remap
+	savepack: step 96: Storing File: res://scripts/game_screen.gd.remap
+	savepack: step 96: Storing File: res://scripts/hud.gd.remap
+	savepack: step 96: Storing File: res://scripts/icons.gd.remap
+	savepack: step 96: Storing File: res://scripts/items.gd.remap
+	savepack: step 96: Storing File: res://scripts/main.gd.remap
+	savepack: step 96: Storing File: res://scripts/mesher.gd.remap
+	savepack: step 96: Storing File: res://scripts/net.gd.remap
+	savepack: step 96: Storing File: res://scripts/saves.gd.remap
+	savepack: step 96: Storing File: res://scripts/world.gd.remap
+	savepack: step 96: Storing File: res://scripts/world_mesh.gd.remap
+	savepack: step 96: Storing File: res://scripts/world_view.gd.remap
+	savepack: step 96: Storing File: res://.godot/global_script_class_cache.cfg
+	savepack: step 96: Storing File: res://icon.png
+	savepack: step 96: Storing File: res://.godot/uid_cache.bin
+	savepack: step 96: Storing File: res://project.binary
+savepack: end
+	export: step 1: Extracting and configuring Xcode project
+Static framework: libgodot.ios.release.xcframework
+Unzipping...
+READ: data.pck
+READ: godot_ios/
+READ: godot_ios/Images.xcassets/
+READ: godot_ios/Images.xcassets/SplashImage.imageset/
+READ: godot_ios/Images.xcassets/SplashImage.imageset/splash@3x.png
+ADDING: zomboid/Images.xcassets/SplashImage.imageset/splash@3x.png size: 14779
+Creating build/ios/zomboid/Images.xcassets/SplashImage.imageset
+READ: godot_ios/Images.xcassets/SplashImage.imageset/splash@2x.png
+ADDING: zomboid/Images.xcassets/SplashImage.imageset/splash@2x.png size: 14779
+READ: godot_ios/Images.xcassets/SplashImage.imageset/Contents.json
+ADDING: zomboid/Images.xcassets/SplashImage.imageset/Contents.json size: 343
+READ: godot_ios/dylibs/
+READ: godot_ios/dylibs/empty
+ADDING: zomboid/dylibs/empty size: 42
+Creating build/ios/zomboid/dylibs
+READ: godot_ios/Launch Screen.storyboard
+ADDING: zomboid/Launch Screen.storyboard size: 3025
+READ: godot_ios/dummy.cpp
+ADDING: zomboid/dummy.cpp size: 2449
+READ: godot_ios/dummy.h
+ADDING: zomboid/dummy.h size: 2271
+READ: godot_ios/dummy.swift
+ADDING: zomboid/dummy.swift size: 2252
+READ: godot_ios/export_options.plist
+ADDING: zomboid/export_options.plist size: 468
+READ: godot_ios/godot_ios-Info.plist
+ADDING: zomboid/zomboid-Info.plist size: 1945
+READ: godot_ios/godot_ios.entitlements
+ADDING: zomboid/zomboid.entitlements size: 190
+READ: godot_ios/en.lproj/
+READ: godot_ios/en.lproj/InfoPlist.strings
+ADDING: zomboid/en.lproj/InfoPlist.strings size: 44
+Creating build/ios/zomboid/en.lproj
+READ: godot_ios.xcodeproj/
+READ: godot_ios.xcodeproj/project.xcworkspace/
+READ: godot_ios.xcodeproj/project.xcworkspace/contents.xcworkspacedata
+ADDING: zomboid.xcodeproj/project.xcworkspace/contents.xcworkspacedata size: 153
+Creating build/ios/zomboid.xcodeproj/project.xcworkspace
+READ: godot_ios.xcodeproj/xcshareddata/
+READ: godot_ios.xcodeproj/xcshareddata/xcschemes/
+READ: godot_ios.xcodeproj/xcshareddata/xcschemes/godot_ios.xcscheme
+ADDING: zomboid.xcodeproj/xcshareddata/xcschemes/zomboid.xcscheme size: 3432
+Creating build/ios/zomboid.xcodeproj/xcshareddata/xcschemes
+READ: godot_ios.xcodeproj/project.pbxproj
+ADDING: zomboid.xcodeproj/project.pbxproj size: 15927
+READ: libgodot.ios.debug.xcframework/
+READ: libgodot.ios.debug.xcframework/Info.plist
+READ: libgodot.ios.debug.xcframework/ios-arm64/
+READ: libgodot.ios.debug.xcframework/ios-arm64/empty
+READ: libgodot.ios.debug.xcframework/ios-arm64/libgodot.a
+READ: libgodot.ios.debug.xcframework/ios-arm64_x86_64-simulator/
+READ: libgodot.ios.debug.xcframework/ios-arm64_x86_64-simulator/empty
+READ: libgodot.ios.debug.xcframework/ios-arm64_x86_64-simulator/libgodot.a
+READ: libgodot.ios.release.xcframework/
+READ: libgodot.ios.release.xcframework/ios-arm64/
+READ: libgodot.ios.release.xcframework/ios-arm64/empty
+READ: libgodot.ios.release.xcframework/ios-arm64/libgodot.a
+ADDING: zomboid.xcframework/ios-arm64/libgodot.a size: 167520728
+Creating build/ios/zomboid.xcframework/ios-arm64
+READ: libgodot.ios.release.xcframework/ios-arm64_x86_64-simulator/
+READ: libgodot.ios.release.xcframework/ios-arm64_x86_64-simulator/empty
+READ: libgodot.ios.release.xcframework/ios-arm64_x86_64-simulator/libgodot.a
+ADDING: zomboid.xcframework/ios-arm64_x86_64-simulator/libgodot.a size: 155629720
+Creating build/ios/zomboid.xcframework/ios-arm64_x86_64-simulator
+READ: libgodot.ios.release.xcframework/Info.plist
+ADDING: zomboid.xcframework/Info.plist size: 1028
+READ: MoltenVK.xcframework/
+READ: MoltenVK.xcframework/ios-arm64/
+READ: MoltenVK.xcframework/ios-arm64/libMoltenVK.a
+ADDING: MoltenVK.xcframework/ios-arm64/libMoltenVK.a size: 9611272
+Creating build/ios/MoltenVK.xcframework/ios-arm64
+READ: MoltenVK.xcframework/ios-arm64_x86_64-simulator/
+READ: MoltenVK.xcframework/ios-arm64_x86_64-simulator/libMoltenVK.a
+ADDING: MoltenVK.xcframework/ios-arm64_x86_64-simulator/libMoltenVK.a size: 20264336
+Creating build/ios/MoltenVK.xcframework/ios-arm64_x86_64-simulator
+READ: MoltenVK.xcframework/ios-arm64_x86_64-maccatalyst/
+READ: MoltenVK.xcframework/ios-arm64_x86_64-maccatalyst/libMoltenVK.a
+ADDING: MoltenVK.xcframework/ios-arm64_x86_64-maccatalyst/libMoltenVK.a size: 20366392
+Creating build/ios/MoltenVK.xcframework/ios-arm64_x86_64-maccatalyst
+READ: MoltenVK.xcframework/Info.plist
+ADDING: MoltenVK.xcframework/Info.plist size: 2834
+READ: PrivacyInfo.xcprivacy
+ADDING: PrivacyInfo.xcprivacy size: 990
+Exporting launch screen storyboard
+Exporting additional assets
+	export: step 2: Code-signing dylibs
+export: end
+loading_editor_layout: begin: Loading editor steps: 5
+	loading_editor_layout: step 0: Loading editor layout...
+loading_editor_layout: end
+cannot connect to daemon at tcp:5037: Connection refused
