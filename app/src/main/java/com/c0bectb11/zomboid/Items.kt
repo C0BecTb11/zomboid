@@ -58,5 +58,6 @@ object Items {
     val lootShelf = listOf(Loot("chips", 4), Loot("canned", 3), Loot("hammer", 2), Loot("planks", 3, 1, 3), Loot("crowbar", 1), Loot("pills", 2))
     val lootMed = listOf(Loot("bandage", 6, 1, 3), Loot("disinfectant", 4), Loot("tweezers", 3), Loot("pills", 3, 1, 2))
     val lootStore = listOf(Loot("canned", 6, 1, 3), Loot("chips", 6, 1, 3), Loot("water", 6, 1, 3), Loot("soda", 5, 1, 3), Loot("bread", 3, 1, 2))
+    val lootCar = listOf(Loot("water", 4), Loot("chips", 3), Loot("rag", 3, 1, 2), Loot("crowbar", 2), Loot("bandage", 2), Loot("ammo", 1, 3, 8), Loot("soda", 3), Loot("planks", 1))
     val lootPolice = listOf(Loot("pistol", 3), Loot("ammo", 6, 6, 15), Loot("bandage", 3, 1, 2), Loot("crowbar", 2))
 }

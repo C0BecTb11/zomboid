@@ -15,6 +15,9 @@ import android.view.SurfaceView
 import org.json.JSONObject
 import java.util.concurrent.ConcurrentLinkedQueue
 import kotlin.math.atan2
+import kotlin.math.cos
+import kotlin.math.sin
+import android.graphics.Path
 import kotlin.math.floor
 import kotlin.math.hypot
 import kotlin.math.max
@@ -49,17 +52,6 @@ class GameView(
     private var selPart = BP.TORSO
     private val treatBtns = ArrayList<Pair<RectF, String>>()
 
-    // анимации: угол дверей и частицы (стекло, щепки)
-    private val doorAngle = HashMap<Int, Float>()
-    private class Particle(var x: Float, var y: Float, var vx: Float, var vy: Float, var life: Float, val max: Float, val color: Int, val size: Float, var rot: Float, val vr: Float)
-    private val particles = ArrayList<Particle>()
-    private val prnd = java.util.Random()
-    private var panel = Panel.NONE
-    private var lootCell = -1
-    private var selected: String? = null
-    private var scroll = floatArrayOf(0f, 0f)
-    private var panelPid = -1; private var panelDownX = 0f; private var panelDownY = 0f; private var panelLastY = 0f; private var panelDrag = false
-
     // ---------- сеть/служебное ----------
     private var initSent = false
     private var snapT = 0f
@@ -80,14 +72,10 @@ class GameView(
     private val pText = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.WHITE; textSize = 14f * resources.displayMetrics.density }
     private val pDark = Paint()
     private val rect = RectF()
-    private val grass = intArrayOf(0xFF3D5C2C.toInt(), 0xFF41622F.toInt(), 0xFF395629.toInt())
-    private val spr = Sprites(ctx)
-    private val pBlood = Paint(Paint.FILTER_BITMAP_FLAG).apply {
-        colorFilter = android.graphics.PorterDuffColorFilter(0xCC6A0D0D.toInt(), android.graphics.PorterDuff.Mode.SRC_IN)
-    }
-    private val pCorpse = Paint(Paint.FILTER_BITMAP_FLAG).apply {
-        colorFilter = android.graphics.LightingColorFilter(0xFF8A8A8A.toInt(), 0)
-    }
+    private val wr = WorldRenderer(ctx, resources.displayMetrics.density)
+    private val vib = ctx.getSystemService(Context.VIBRATOR_SERVICE) as? android.os.Vibrator
+    private var lootWait = 0f
+    private var insetR = 0f
 
     init {
         holder.addCallback(this)
@@ -218,29 +206,19 @@ class GameView(
                 if (autosaveT <= 0f) { autosaveT = 60f; saveNow() }
             }
         }
-        // анимации дверей и частицы
-        if (gm.world.events.isNotEmpty()) {
-            for (ev in gm.world.events) onTileEvent(gm.world, ev[0], ev[1], ev[2])
-            gm.world.events.clear()
+        // анимации, свет, камера
+        if (me != null) wr.update(dt, gm, me, localPid)
+        if (wr.vibrate > 0) {
+            val ms = wr.vibrate.toLong(); wr.vibrate = 0
+            try {
+                if (Build.VERSION.SDK_INT >= 26) vib?.vibrate(android.os.VibrationEffect.createOneShot(ms, android.os.VibrationEffect.DEFAULT_AMPLITUDE))
+                else @Suppress("DEPRECATION") vib?.vibrate(ms)
+            } catch (_: Exception) {}
         }
-        if (doorAngle.isNotEmpty()) {
-            val di = doorAngle.entries.iterator()
-            while (di.hasNext()) {
-                val e = di.next()
-                val target = when (gm.world.tAt(e.key)) { T.DOOR_OPEN -> 90f; T.DOOR -> 0f; else -> { di.remove(); continue } }
-                val v = e.value; val step = dt * 420f
-                if (kotlin.math.abs(target - v) <= step) di.remove() else e.setValue(v + if (target > v) step else -step)
-            }
-        }
-        val pi = particles.iterator()
-        while (pi.hasNext()) {
-            val pt = pi.next()
-            pt.life -= dt
-            if (pt.life <= 0f) { pi.remove(); continue }
-            pt.x += pt.vx * dt; pt.y += pt.vy * dt
-            val fr = 1f - min(1f, dt * 4f); pt.vx *= fr; pt.vy *= fr
-            pt.rot += pt.vr * dt * (pt.vx * pt.vx + pt.vy * pt.vy).coerceAtMost(1f)
-        }
+        // обыск прерван — закрыть пустую панель
+        if (panel == Panel.LOOT && me != null && gm.world.containers[lootCell] == null && T.isContainer(gm.world.tAt(lootCell))) {
+            if (me.taAct == null) { lootWait += dt; if (lootWait > 0.4f) panel = Panel.NONE } else lootWait = 0f
+        } else lootWait = 0f
 
         // закрыть лут, если отошёл
         if (panel == Panel.LOOT && me != null && (!gm.nearCell(me, lootCell, 2.2f) || me.dead)) panel = Panel.NONE
@@ -334,6 +312,7 @@ class GameView(
     private val bBody = Btn(0f, 0f, 0f)
 
     private fun layoutButtons() {
+        val W = this.W - insetR
         bAttack.x = W - 88 * dp; bAttack.y = H - 84 * dp; bAttack.r = 50 * dp
         bInteract.x = W - 196 * dp; bInteract.y = H - 54 * dp; bInteract.r = 36 * dp
         bRun.x = W - 186 * dp; bRun.y = H - 150 * dp; bRun.r = 32 * dp
@@ -501,82 +480,13 @@ class GameView(
             return
         }
         val me = gm.player(localPid) ?: return
-        val ts = H / 12.5f
-        val camX = me.rx; val camY = me.ry
-        val ox = W / 2 - camX * ts; val oy = H / 2 - camY * ts
-        val world = gm.world
-        val x0 = max(0, floor(camX - W / 2 / ts).toInt() - 1); val x1 = min(world.w - 1, floor(camX + W / 2 / ts).toInt() + 1)
-        val y0 = max(0, floor(camY - H / 2 / ts).toInt() - 1); val y1 = min(world.h - 1, floor(camY + H / 2 / ts).toInt() + 1)
-
-        for (y in y0..y1) for (x in x0..x1) drawTile(c, world, x, y, ox + x * ts, oy + y * ts, ts)
-
-        // трупы
-        for (cp in gm.corpses) {
-            if (cp.x < x0 - 1 || cp.x > x1 + 1 || cp.y < y0 - 1 || cp.y > y1 + 1) continue
-            val sx = ox + cp.x * ts; val sy = oy + cp.y * ts
-            val rot = ((cp.x * 97f + cp.y * 31f) % 360f)
-            c.save(); c.translate(sx, sy); c.rotate(rot)
-            if (!spr.pivot(c, "t320", 32f, 32f, ts / 64f * 0.9f, pBlood)) { pFill.color = 0xAA5A1010.toInt(); c.drawCircle(0f, 0f, ts * 0.38f, pFill) }
-            spr.pivot(c, if (cp.zombie) "z_stand" else "p0_hold", 17f, 21.5f, ts * 0.68f / 43f, pCorpse)
-            c.restore()
-        }
-
-        // зомби (видимые)
-        val dark = gm.darkness()
-        val view = 20f - 13f * dark
-        for (z in gm.zombies) {
-            val d = hypot(z.rx - me.rx, z.ry - me.ry)
-            if (d > view && !(d < 2.5f)) continue
-            if (z.rx < x0 - 1 || z.rx > x1 + 1 || z.ry < y0 - 1 || z.ry > y1 + 1) continue
-            if (!world.los(me.rx, me.ry, z.rx, z.ry)) continue
-            drawZombie(c, z, ox + z.rx * ts, oy + z.ry * ts, ts)
-        }
-        // игроки
-        for (p in gm.players) {
-            if (p.dead || !p.connected) continue
-            drawPlayer(c, p, ox + p.rx * ts, oy + p.ry * ts, ts)
-        }
-        // частицы
-        for (pt in particles) {
-            val a = (pt.life / pt.max).coerceIn(0f, 1f)
-            pFill.color = (pt.color and 0x00FFFFFF) or ((a * 255).toInt() shl 24)
-            c.save(); c.translate(ox + pt.x * ts, oy + pt.y * ts); c.rotate(pt.rot)
-            val sz = pt.size * ts
-            c.drawRect(-sz, -sz * 0.45f, sz, sz * 0.45f, pFill)
-            c.restore()
-        }
-        // выстрелы
-        pLine.color = 0xFFFFE070.toInt(); pLine.strokeWidth = 2.5f * dp
-        for (s in gm.shots) c.drawLine(ox + s[0] * ts, oy + s[1] * ts, ox + s[2] * ts, oy + s[3] * ts, pLine)
-        // кроны деревьев поверх
-        for (y in y0..y1) for (x in x0..x1) if (world.t(x, y) == T.TREE) {
-            val sx = ox + (x + 0.5f) * ts; val sy = oy + (y + 0.5f) * ts
-            val name = if ((hash(x, y) and 7) == 0) "t186" else "t183"
-            c.save(); c.translate(sx, sy); c.rotate(((hash(y, x) and 0x7fffffff) % 360).toFloat())
-            if (!spr.pivot(c, name, 32f, 32f, ts * 1.7f / 64f)) {
-                pFill.color = 0xFF2C5222.toInt(); c.drawCircle(0f, 0f, ts * 0.85f, pFill)
-            }
-            c.restore()
-        }
-
-        // темнота
-        if (dark > 0.02f) {
-            val a = (dark * 235).toInt().coerceIn(0, 255)
-            val cx = ox + me.rx * ts; val cy = oy + me.ry * ts
-            pDark.shader = RadialGradient(cx, cy, ts * 7.5f,
-                intArrayOf(Color.argb(0, 0, 0, 10), Color.argb(a / 3, 0, 0, 10), Color.argb(a, 0, 0, 10)),
-                floatArrayOf(0f, 0.45f, 1f), Shader.TileMode.CLAMP)
-            c.drawRect(0f, 0f, W, H, pDark)
-        }
-
-        // подсветка цели действия
+        if (Build.VERSION.SDK_INT >= 28) {
+            val cut = rootWindowInsets?.displayCutout
+            hudL = 14 * dp + (cut?.safeInsetLeft ?: 0)
+            insetR = (cut?.safeInsetRight ?: 0).toFloat()
+        } else hudL = 14 * dp
         val target = gm.findInteract(me)
-        if (target >= 0) {
-            pLine.color = 0x99FFFFFF.toInt(); pLine.strokeWidth = 2 * dp
-            val tx = target % world.w; val ty = target / world.w
-            rect.set(ox + tx * ts + 2, oy + ty * ts + 2, ox + (tx + 1) * ts - 2, oy + (ty + 1) * ts - 2)
-            c.drawRoundRect(rect, 6 * dp, 6 * dp, pLine)
-        }
+        wr.draw(c, gm, me, W, H, target)
         barrCell = gm.findBarricade(me)
 
         drawHud(c, gm, me, target)
@@ -597,207 +507,153 @@ class GameView(
         }
     }
 
-    private fun hash(x: Int, y: Int): Int { var h = x * 374761393 + y * 668265263; h = (h xor (h ushr 13)) * 1274126177; return h xor (h ushr 16) }
+    // ================== ИНТЕРФЕЙС ==================
+    private val glyph = Path()
 
-    private fun drawTile(c: Canvas, w: World, x: Int, y: Int, sx: Float, sy: Float, ts: Float) {
-        val t = w.t(x, y)
-        val e = sx + ts + 0.5f; val b = sy + ts + 0.5f
-        val hv = hash(x, y) and 0x7fffffff
-        fun fill(col: Int) { pTile.color = col; c.drawRect(sx, sy, e, b, pTile) }
-        fun floorUnder() {
-            var f = T.WOOD
-            for (k in 0 until 4) { val n = w.t(x + World.DX4[k], y + World.DY4[k]); if (T.isFloor(n)) { f = n; break } }
-            drawFloor(c, f, x, y, sx, sy, e, b, ts)
-        }
-        fun wallBrick() {
-            if (!spr.tile(c, arrayOf("t42", "t44", "t46")[hv % 3], sx, sy, ts)) fill(0xFFC8743A.toInt())
-            pTile.color = 0x40000000; c.drawRect(sx, b - ts * 0.12f, e, b, pTile)
-        }
-        when (t) {
-            T.GRASS, T.TREE -> if (!spr.tile(c, arrayOf("t01", "t02", "t03", "t04")[hv % 4], sx, sy, ts)) fill(grass[hv % 3])
-            T.ROAD -> {
-                val cy = y % 25 == 1; val cx = x % 25 == 1
-                val vroad = w.t(x, y - 1) == T.ROAD && w.t(x, y + 1) == T.ROAD && (w.t(x - 1, y) != T.ROAD || w.t(x + 1, y) != T.ROAD)
-                val name = when {
-                    cy && !cx && x % 2 == 0 && !vroad -> "t56"
-                    cx && !cy && y % 2 == 0 && vroad -> "t55"
-                    else -> "t86"
-                }
-                if (!spr.tile(c, name, sx, sy, ts)) fill(0xFF38383B.toInt())
+    /** Простые белые пиктограммы для мудлов и кнопок */
+    private fun drawGlyph(c: Canvas, kind: String, cx: Float, cy: Float, r: Float, col: Int = Color.WHITE) {
+        pLine.color = col; pLine.strokeWidth = r * 0.16f; pLine.style = Paint.Style.STROKE
+        pFill.color = col
+        glyph.reset()
+        when (kind) {
+            "hunger" -> { // вилка и нож
+                c.drawLine(cx - r * 0.35f, cy - r * 0.6f, cx - r * 0.35f, cy + r * 0.6f, pLine)
+                c.drawLine(cx - r * 0.55f, cy - r * 0.6f, cx - r * 0.55f, cy - r * 0.15f, pLine)
+                c.drawLine(cx - r * 0.15f, cy - r * 0.6f, cx - r * 0.15f, cy - r * 0.15f, pLine)
+                glyph.moveTo(cx + r * 0.35f, cy + r * 0.6f); glyph.lineTo(cx + r * 0.35f, cy - r * 0.6f); glyph.quadTo(cx + r * 0.7f, cy - r * 0.2f, cx + r * 0.35f, cy + r * 0.05f)
+                c.drawPath(glyph, pLine)
             }
-            T.SIDEWALK -> if (!spr.tile(c, if (hv % 5 == 0) "t09" else if (hv % 2 == 0) "t07" else "t08", sx, sy, ts)) fill(0xFF85857F.toInt())
-            T.WOOD, T.TILEFLOOR -> drawFloor(c, t, x, y, sx, sy, e, b, ts)
-            T.WALL -> wallBrick()
-            T.DOOR, T.DOOR_OPEN, T.DOOR_BROKEN -> {
-                floorUnder()
-                val horiz = w.t(x - 1, y) == T.WALL || w.t(x + 1, y) == T.WALL || T.isWindowLike(w.t(x - 1, y)) || T.isWindowLike(w.t(x + 1, y))
-                c.save()
-                if (!horiz) { c.translate(sx + ts / 2, sy + ts / 2); c.rotate(90f); c.translate(-(sx + ts / 2), -(sy + ts / 2)) }
-                if (t == T.DOOR_BROKEN) {
-                    pLine.color = 0xFF8A5E34.toInt(); pLine.strokeWidth = ts * 0.1f
-                    c.drawLine(sx + ts * 0.05f, sy + ts * 0.45f, sx + ts * 0.35f, sy + ts * 0.58f, pLine)
-                    c.drawLine(sx + ts * 0.65f, sy + ts * 0.42f, sx + ts * 0.95f, sy + ts * 0.55f, pLine)
-                } else {
-                    // дверь вращается на петле
-                    val ang = doorAngle[w.idx(x, y)] ?: (if (t == T.DOOR_OPEN) 90f else 0f)
-                    val hx = sx + ts * 0.06f; val hy = sy + ts * 0.5f
-                    c.rotate(-ang, hx, hy)
-                    pTile.color = 0xFF6E4A2A.toInt(); c.drawRect(hx, hy - ts * 0.09f, hx + ts * 0.9f, hy + ts * 0.09f, pTile)
-                    pTile.color = 0xFFA97A48.toInt(); c.drawRect(hx + ts * 0.03f, hy - ts * 0.06f, hx + ts * 0.87f, hy + ts * 0.06f, pTile)
-                    pFill.color = 0xFFE0C050.toInt(); c.drawCircle(hx + ts * 0.76f, hy, ts * 0.045f, pFill)
-                    pFill.color = 0xFF3A2A1A.toInt(); c.drawCircle(hx, hy, ts * 0.05f, pFill)
-                }
-                c.restore()
+            "drop", "bleed" -> {
+                glyph.moveTo(cx, cy - r * 0.7f); glyph.cubicTo(cx + r * 0.6f, cy, cx + r * 0.55f, cy + r * 0.65f, cx, cy + r * 0.65f)
+                glyph.cubicTo(cx - r * 0.55f, cy + r * 0.65f, cx - r * 0.6f, cy, cx, cy - r * 0.7f); glyph.close()
+                c.drawPath(glyph, pFill)
+                if (kind == "bleed") { c.drawCircle(cx + r * 0.55f, cy + r * 0.5f, r * 0.12f, pFill); c.drawCircle(cx - r * 0.6f, cy + r * 0.35f, r * 0.09f, pFill) }
             }
-            T.WINDOW, T.WINDOW_BROKEN -> {
-                wallBrick()
-                val horiz = w.t(x - 1, y) == T.WALL || w.t(x + 1, y) == T.WALL || T.isWindowLike(w.t(x - 1, y)) || T.isWindowLike(w.t(x + 1, y))
-                c.save()
-                if (!horiz) { c.translate(sx + ts / 2, sy + ts / 2); c.rotate(90f); c.translate(-(sx + ts / 2), -(sy + ts / 2)) }
-                pTile.color = 0xFFE8E8E8.toInt(); c.drawRect(sx, sy + ts * 0.3f, sx + ts, sy + ts * 0.7f, pTile)
-                if (t == T.WINDOW) {
-                    pTile.color = 0xFFA8DCF0.toInt(); c.drawRect(sx + ts * 0.04f, sy + ts * 0.38f, sx + ts * 0.96f, sy + ts * 0.62f, pTile)
-                    pTile.color = 0xCCFFFFFF.toInt(); c.drawRect(sx + ts * 0.15f, sy + ts * 0.42f, sx + ts * 0.4f, sy + ts * 0.46f, pTile)
-                } else {
-                    pTile.color = 0xFF2A3036.toInt(); c.drawRect(sx + ts * 0.04f, sy + ts * 0.38f, sx + ts * 0.96f, sy + ts * 0.62f, pTile)
-                    pLine.color = 0xFFA8DCF0.toInt(); pLine.strokeWidth = 1.5f * dp
-                    c.drawLine(sx + ts * 0.06f, sy + ts * 0.4f, sx + ts * 0.3f, sy + ts * 0.58f, pLine)
-                    c.drawLine(sx + ts * 0.94f, sy + ts * 0.4f, sx + ts * 0.72f, sy + ts * 0.6f, pLine)
-                }
-                c.restore()
+            "fever" -> {
+                c.drawLine(cx, cy - r * 0.6f, cx, cy + r * 0.2f, pLine)
+                c.drawCircle(cx, cy + r * 0.38f, r * 0.24f, pFill)
+                c.drawLine(cx + r * 0.25f, cy - r * 0.4f, cx + r * 0.45f, cy - r * 0.4f, pLine)
+                c.drawLine(cx + r * 0.25f, cy - r * 0.1f, cx + r * 0.45f, cy - r * 0.1f, pLine)
             }
-            else -> if (T.isFurniture(t)) {
-                floorUnder()
-                val name = when (t) {
-                    T.FRIDGE -> "t322"
-                    T.COUNTER -> if (hv % 3 == 0) "t297" else "t294"
-                    T.WARDROBE -> "t453"
-                    T.SHELF -> "t430"
-                    T.MEDCAB -> "t269"
-                    T.LOCKER -> "t536"
-                    else -> if (hv % 2 == 0) "t431" else "t432"
-                }
-                if (!spr.tile(c, name, sx, sy, ts)) {
-                    pFill.color = 0xFF8A6238.toInt(); rect.set(sx + ts * 0.08f, sy + ts * 0.08f, e - ts * 0.1f, b - ts * 0.1f); c.drawRoundRect(rect, ts * 0.08f, ts * 0.08f, pFill)
-                }
-                if (t == T.MEDCAB) {
-                    pTile.color = 0xFFD03030.toInt()
-                    c.drawRect(sx + ts * 0.45f, sy + ts * 0.3f, sx + ts * 0.55f, sy + ts * 0.7f, pTile)
-                    c.drawRect(sx + ts * 0.3f, sy + ts * 0.45f, sx + ts * 0.7f, sy + ts * 0.55f, pTile)
-                }
-                if (w.containers[w.idx(x, y)]?.isEmpty() == true) { pFill.color = 0x50000000; c.drawRect(sx, sy, e, b, pFill) }
+            "wound" -> {
+                pLine.strokeWidth = r * 0.3f; c.drawLine(cx - r * 0.5f, cy + r * 0.5f, cx + r * 0.5f, cy - r * 0.5f, pLine)
+                pFill.color = 0xFFD04040.toInt(); c.drawCircle(cx, cy, r * 0.14f, pFill)
             }
-        }
-        // кучка вещей на полу — ящик
-        if (!T.isFurniture(t)) {
-            val pile = w.containers[w.idx(x, y)]
-            if (pile != null && pile.isNotEmpty()) {
-                c.save(); c.translate(sx + ts / 2, sy + ts / 2); c.rotate((hv % 40 - 20).toFloat())
-                if (!spr.pivot(c, "t157", 32f, 32f, ts / 64f * 0.9f)) { pFill.color = 0xFFB08850.toInt(); c.drawCircle(0f, 0f, ts * 0.15f, pFill) }
-                c.restore()
-                Icons.draw(c, pile[0].id, sx + ts * 0.62f, sy + ts * 0.38f, ts * 0.42f)
+            "glass" -> { glyph.moveTo(cx - r * 0.2f, cy - r * 0.65f); glyph.lineTo(cx + r * 0.45f, cy + r * 0.5f); glyph.lineTo(cx - r * 0.45f, cy + r * 0.35f); glyph.close(); c.drawPath(glyph, pFill) }
+            "weight" -> {
+                c.drawCircle(cx, cy - r * 0.42f, r * 0.2f, pLine)
+                glyph.moveTo(cx - r * 0.35f, cy - r * 0.2f); glyph.lineTo(cx + r * 0.35f, cy - r * 0.2f); glyph.lineTo(cx + r * 0.55f, cy + r * 0.6f); glyph.lineTo(cx - r * 0.55f, cy + r * 0.6f); glyph.close()
+                c.drawPath(glyph, pFill)
             }
-        }
-        // баррикада — доски крест-накрест
-        val bl = w.barrAt(w.idx(x, y))
-        if (bl > 0) {
-            for (k in 0 until bl) {
-                c.save(); c.translate(sx + ts / 2, sy + ts / 2)
-                if (k == 1) c.scale(-1f, 1f)
-                if (k == 2) c.rotate(45f)
-                if (!spr.pivot(c, "t265", 32f, 32f, ts / 64f * 1.05f)) {
-                    pLine.color = 0xFFA07040.toInt(); pLine.strokeWidth = ts * 0.12f
-                    c.drawLine(-ts * 0.45f, -ts * 0.3f, ts * 0.45f, ts * 0.3f, pLine)
-                }
-                c.restore()
+            "tired" -> { glyph.moveTo(cx + r * 0.15f, cy - r * 0.7f); glyph.lineTo(cx - r * 0.4f, cy + r * 0.1f); glyph.lineTo(cx, cy + r * 0.1f); glyph.lineTo(cx - r * 0.15f, cy + r * 0.7f); glyph.lineTo(cx + r * 0.4f, cy - r * 0.1f); glyph.lineTo(cx, cy - r * 0.1f); glyph.close(); c.drawPath(glyph, pFill) }
+            "eye" -> {
+                glyph.moveTo(cx - r * 0.65f, cy); glyph.quadTo(cx, cy - r * 0.6f, cx + r * 0.65f, cy); glyph.quadTo(cx, cy + r * 0.6f, cx - r * 0.65f, cy); glyph.close()
+                c.drawPath(glyph, pLine); c.drawCircle(cx, cy, r * 0.18f, pFill)
             }
+            "panic" -> { pLine.strokeWidth = r * 0.24f; c.drawLine(cx, cy - r * 0.6f, cx, cy + r * 0.15f, pLine); c.drawCircle(cx, cy + r * 0.5f, r * 0.13f, pFill) }
+            "hand" -> {
+                rect.set(cx - r * 0.42f, cy - r * 0.1f, cx + r * 0.42f, cy + r * 0.65f); c.drawRoundRect(rect, r * 0.2f, r * 0.2f, pFill)
+                for (k in 0..3) { val fx = cx - r * 0.32f + k * r * 0.21f; rect.set(fx - r * 0.08f, cy - r * 0.6f + (if (k == 0 || k == 3) r * 0.15f else 0f), fx + r * 0.08f, cy); c.drawRoundRect(rect, r * 0.08f, r * 0.08f, pFill) }
+            }
+            "run" -> {
+                c.drawCircle(cx + r * 0.15f, cy - r * 0.55f, r * 0.15f, pFill)
+                glyph.moveTo(cx - r * 0.45f, cy - r * 0.15f); glyph.lineTo(cx - r * 0.05f, cy - r * 0.3f); glyph.lineTo(cx + r * 0.35f, cy - r * 0.05f)
+                c.drawPath(glyph, pLine); glyph.reset()
+                glyph.moveTo(cx - r * 0.5f, cy + r * 0.65f); glyph.lineTo(cx - r * 0.15f, cy + r * 0.25f); glyph.lineTo(cx - r * 0.05f, cy - r * 0.3f)
+                glyph.moveTo(cx - r * 0.15f, cy + r * 0.25f); glyph.lineTo(cx + r * 0.25f, cy + r * 0.3f); glyph.lineTo(cx + r * 0.35f, cy + r * 0.7f)
+                c.drawPath(glyph, pLine)
+            }
+            "bag" -> {
+                rect.set(cx - r * 0.5f, cy - r * 0.3f, cx + r * 0.5f, cy + r * 0.65f); c.drawRoundRect(rect, r * 0.2f, r * 0.2f, pFill)
+                rect.set(cx - r * 0.25f, cy - r * 0.65f, cx + r * 0.25f, cy - r * 0.15f); c.drawRoundRect(rect, r * 0.2f, r * 0.2f, pLine)
+            }
+            "body" -> {
+                c.drawCircle(cx, cy - r * 0.5f, r * 0.2f, pFill)
+                rect.set(cx - r * 0.25f, cy - r * 0.25f, cx + r * 0.25f, cy + r * 0.25f); c.drawRoundRect(rect, r * 0.1f, r * 0.1f, pFill)
+                c.drawLine(cx - r * 0.38f, cy - r * 0.2f, cx - r * 0.45f, cy + r * 0.2f, pLine); c.drawLine(cx + r * 0.38f, cy - r * 0.2f, cx + r * 0.45f, cy + r * 0.2f, pLine)
+                c.drawLine(cx - r * 0.13f, cy + r * 0.3f, cx - r * 0.15f, cy + r * 0.7f, pLine); c.drawLine(cx + r * 0.13f, cy + r * 0.3f, cx + r * 0.15f, cy + r * 0.7f, pLine)
+            }
+            "pause" -> { c.drawRect(cx - r * 0.32f, cy - r * 0.42f, cx - r * 0.1f, cy + r * 0.42f, pFill); c.drawRect(cx + r * 0.1f, cy - r * 0.42f, cx + r * 0.32f, cy + r * 0.42f, pFill) }
+            "fist" -> {
+                rect.set(cx - r * 0.45f, cy - r * 0.35f, cx + r * 0.45f, cy + r * 0.45f); c.drawRoundRect(rect, r * 0.25f, r * 0.25f, pFill)
+                pLine.color = 0x66000000; pLine.strokeWidth = r * 0.06f
+                for (k in 1..3) { val fx = cx - r * 0.45f + k * r * 0.225f; c.drawLine(fx, cy - r * 0.35f, fx, cy, pLine) }
+            }
+            "door" -> { rect.set(cx - r * 0.38f, cy - r * 0.65f, cx + r * 0.38f, cy + r * 0.65f); c.drawRect(rect, pLine); c.drawCircle(cx + r * 0.18f, cy, r * 0.08f, pFill) }
+            "search" -> { c.drawCircle(cx - r * 0.12f, cy - r * 0.12f, r * 0.38f, pLine); pLine.strokeWidth = r * 0.22f; c.drawLine(cx + r * 0.16f, cy + r * 0.16f, cx + r * 0.55f, cy + r * 0.55f, pLine) }
+            "sun" -> { c.drawCircle(cx, cy, r * 0.35f, pFill); for (k in 0 until 8) { val a = k * 0.785f; c.drawLine(cx + cos(a) * r * 0.5f, cy + sin(a) * r * 0.5f, cx + cos(a) * r * 0.72f, cy + sin(a) * r * 0.72f, pLine) } }
+            "moon" -> { glyph.addCircle(cx, cy, r * 0.55f, Path.Direction.CW); val cut = Path(); cut.addCircle(cx + r * 0.3f, cy - r * 0.2f, r * 0.45f, Path.Direction.CW); glyph.op(cut, Path.Op.DIFFERENCE); c.drawPath(glyph, pFill) }
         }
     }
 
-    private fun drawFloor(c: Canvas, t: Int, x: Int, y: Int, sx: Float, sy: Float, e: Float, b: Float, ts: Float) {
-        val ok = if (t == T.TILEFLOOR) spr.tile(c, "t12", sx, sy, ts)
-        else spr.tile(c, arrayOf("t43", "t45", "t47")[(hash(x, y) and 0x7fffffff) % 3], sx, sy, ts)
-        if (!ok) { pTile.color = if (t == T.TILEFLOOR) 0xFFC8C2B4.toInt() else 0xFF8B6A43.toInt(); c.drawRect(sx, sy, e, b, pTile) }
+    private class Moodle(val glyph: String, val level: Int, val label: String)
+
+    private fun moodles(gm: Game, me: Player): List<Moodle> {
+        val m = ArrayList<Moodle>()
+        fun lvl(v: Float, a: Float, b: Float, c: Float) = when { v >= c -> 3; v >= b -> 2; v >= a -> 1; else -> 0 }
+        if (me.bleeding) m.add(Moodle("bleed", 3, "Кровь"))
+        lvl(me.hunger, 45f, 65f, 85f).let { if (it > 0) m.add(Moodle("hunger", it, "Голод")) }
+        lvl(me.thirst, 45f, 65f, 85f).let { if (it > 0) m.add(Moodle("drop", it, "Жажда")) }
+        if (me.infection > 420f) m.add(Moodle("fever", if (me.infection > 900f) 3 else 2, "Жар"))
+        if (me.body.woundInfected) m.add(Moodle("wound", 2, "Нагноение"))
+        if (me.body.parts.any { it.hasGlass }) m.add(Moodle("glass", 2, "Стекло"))
+        if (me.weight() > Game.MAX_WEIGHT) m.add(Moodle("weight", 2, "Тяжело"))
+        if (me.stamina < 25f) m.add(Moodle("tired", if (me.stamina < 10f) 2 else 1, "Устал"))
+        if (gm.zombies.any { it.chase > 0f && it.down <= 0f && hypot(it.rx - me.rx, it.ry - me.ry) < 6f }) m.add(Moodle("panic", 2, "Паника"))
+        if (me.sneaking) m.add(Moodle("eye", 0, "Тихо"))
+        return m
     }
 
-    private fun drawZombie(c: Canvas, z: Zombie, sx: Float, sy: Float, ts: Float) {
-        val a = Math.toDegrees(atan2(z.fy, z.fx).toDouble()).toFloat()
-        val sway = kotlin.math.sin(z.anim * 5f) * 7f
-        c.save(); c.translate(sx, sy); c.rotate(a + sway)
-        val s = ts * 0.68f / 43f
-        pFill.color = 0x40000000; c.drawCircle(ts * 0.05f, ts * 0.07f, ts * 0.3f, pFill)
-        if (!spr.pivot(c, "z_hold", 17f, 21.5f, s)) {
-            pFill.color = 0xFF5A6A48.toInt(); c.drawCircle(0f, 0f, ts * 0.28f, pFill)
-        }
-        if (z.chase > 0f) {
-            pFill.color = 0xFFFF2020.toInt()
-            c.drawCircle(ts * 0.13f, -ts * 0.05f, ts * 0.025f, pFill); c.drawCircle(ts * 0.13f, ts * 0.05f, ts * 0.025f, pFill)
-        }
-        c.restore()
-    }
-
-    private fun drawPlayer(c: Canvas, p: Player, sx: Float, sy: Float, ts: Float) {
-        val a = Math.toDegrees(atan2(p.fy, p.fx).toDouble()).toFloat()
-        c.save(); c.translate(sx, sy); c.rotate(a)
-        val s = ts * 0.68f / 43f
-        pFill.color = 0x40000000; c.drawCircle(ts * 0.05f, ts * 0.07f, ts * 0.3f, pFill)
-        val w = p.weapon()
-        val who = if (p.id == 0) "p0" else "p1"
-        if (w.kind == ItemKind.GUN) {
-            if (!spr.pivot(c, "${who}_gun", 17f, 21.5f, s)) { pFill.color = 0xFF3A6EA5.toInt(); c.drawCircle(0f, 0f, ts * 0.28f, pFill) }
-            if (p.attackAnim > 0.6f) { pFill.color = 0xCCFFE070.toInt(); c.drawCircle(37f * s, 14f * s, ts * 0.1f, pFill) }
-        } else {
-            // оружие ближнего боя в правой руке с замахом
-            if (w.id != "fists") {
-                c.save()
-                c.translate(15f * s, 14f * s)
-                c.rotate(-60f * p.attackAnim + 20f * (1f - p.attackAnim) - 10f)
-                pLine.color = 0xFF3A2A1A.toInt(); pLine.strokeWidth = ts * (if (w.id == "knife") 0.07f else 0.11f)
-                val len = ts * (0.2f + w.range * 0.28f)
-                c.drawLine(0f, 0f, len, 0f, pLine)
-                pLine.color = w.color; pLine.strokeWidth = ts * (if (w.id == "knife") 0.045f else 0.08f)
-                c.drawLine(ts * 0.03f, 0f, len - ts * 0.02f, 0f, pLine)
-                c.restore()
-            }
-            if (!spr.pivot(c, "${who}_hold", 17f, 21.5f, s)) { pFill.color = 0xFF3A6EA5.toInt(); c.drawCircle(0f, 0f, ts * 0.28f, pFill) }
-        }
-        c.restore()
-    }
-
-    private fun bar(c: Canvas, x: Float, y: Float, v: Float, col: Int, label: String) {
-        val bw = 110 * dp; val bh = 9 * dp
-        pFill.color = 0x88000000.toInt(); rect.set(x, y, x + bw, y + bh); c.drawRoundRect(rect, bh / 2, bh / 2, pFill)
-        pFill.color = col; rect.set(x, y, x + bw * (v / 100f).coerceIn(0f, 1f), y + bh); c.drawRoundRect(rect, bh / 2, bh / 2, pFill)
-        pText.textSize = 11 * dp; c.drawText(label, x + bw + 6 * dp, y + bh, pText)
-    }
+    private var hudL = 14f
 
     private fun drawHud(c: Canvas, gm: Game, me: Player, target: Int) {
         layoutButtons()
-        val x = 14 * dp; var y = 14 * dp
-        bar(c, x, y, me.hp, 0xFFD04040.toInt(), "Здоровье"); y += 16 * dp
-        bar(c, x, y, 100 - me.hunger, 0xFFE09030.toInt(), "Сытость"); y += 16 * dp
-        bar(c, x, y, 100 - me.thirst, 0xFF4090E0.toInt(), "Вода"); y += 16 * dp
-        bar(c, x, y, me.stamina, 0xFFE0D040.toInt(), "Силы"); y += 22 * dp
-        pText.textSize = 13 * dp
-        val status = ArrayList<Pair<String, Int>>()
-        if (me.bleeding) status.add("Кровотечение — открой «Тело»" to 0xFFFF6060.toInt())
-        if (me.infection > 420f) status.add("Лихорадка" to 0xFF90E060.toInt())
-        if (me.weight() > Game.MAX_WEIGHT) status.add("Перегруз" to 0xFFFFC040.toInt())
-        if (me.hunger > 70f) status.add("Голод" to 0xFFFFA040.toInt())
-        if (me.thirst > 70f) status.add("Жажда" to 0xFF70B0FF.toInt())
-        if (me.body.woundInfected) status.add("Рана воспалилась" to 0xFFC080FF.toInt())
-        if (me.body.parts.any { it.hasGlass }) status.add("Стекло в ране" to 0xFF9FD8F0.toInt())
-        if (me.body.parts.any { it.dirty && it.wounds.isNotEmpty() }) status.add("Грязная повязка" to 0xFFC0A060.toInt())
-        for ((s, col) in status) { pText.color = col; c.drawText(s, x, y, pText); y += 17 * dp }
+        val x = hudL; val y = 12 * dp
+        // карточка здоровья
+        val cw = 190 * dp
+        pFill.color = 0x9A0E1216.toInt(); rect.set(x, y, x + cw, y + 44 * dp); c.drawRoundRect(rect, 12 * dp, 12 * dp, pFill)
+        // сердце
+        pFill.color = 0xFFE04848.toInt()
+        val hx = x + 20 * dp; val hy = y + 17 * dp; val hr = 7 * dp
+        glyph.reset(); glyph.moveTo(hx, hy + hr); glyph.cubicTo(hx - hr * 1.6f, hy - hr * 0.1f, hx - hr * 0.6f, hy - hr * 1.4f, hx, hy - hr * 0.4f)
+        glyph.cubicTo(hx + hr * 0.6f, hy - hr * 1.4f, hx + hr * 1.6f, hy - hr * 0.1f, hx, hy + hr); c.drawPath(glyph, pFill)
+        val bx = x + 36 * dp; val bw = cw - 48 * dp
+        pFill.color = 0x55FFFFFF; rect.set(bx, y + 12 * dp, bx + bw, y + 22 * dp); c.drawRoundRect(rect, 5 * dp, 5 * dp, pFill)
+        pFill.color = if (me.hp < 30f) 0xFFE03030.toInt() else 0xFFD85A4A.toInt()
+        rect.set(bx, y + 12 * dp, bx + bw * (me.hp / 100f).coerceIn(0f, 1f), y + 22 * dp); c.drawRoundRect(rect, 5 * dp, 5 * dp, pFill)
+        pFill.color = 0x40FFFFFF; rect.set(bx, y + 29 * dp, bx + bw, y + 33 * dp); c.drawRoundRect(rect, 2 * dp, 2 * dp, pFill)
+        pFill.color = 0xFFE8C850.toInt(); rect.set(bx, y + 29 * dp, bx + bw * (me.stamina / 100f).coerceIn(0f, 1f), y + 33 * dp); c.drawRoundRect(rect, 2 * dp, 2 * dp, pFill)
+        // мудлы
+        var mx = x + 4 * dp; val my = y + 70 * dp
+        for (m in moodles(gm, me)) {
+            val ring = when (m.level) { 0 -> 0xFF8A9096.toInt(); 1 -> 0xFFE8C850.toInt(); 2 -> 0xFFE88A30.toInt(); else -> 0xFFE03A3A.toInt() }
+            pFill.color = 0xC0141820.toInt(); c.drawCircle(mx + 17 * dp, my, 17 * dp, pFill)
+            pLine.color = ring; pLine.strokeWidth = 2.5f * dp; c.drawCircle(mx + 17 * dp, my, 16 * dp, pLine)
+            drawGlyph(c, m.glyph, mx + 17 * dp, my, 12 * dp, if (m.glyph == "bleed") 0xFFFF5050.toInt() else Color.WHITE)
+            pText.textAlign = Paint.Align.CENTER; pText.textSize = 9.5f * dp; pText.color = 0xDDFFFFFF.toInt()
+            c.drawText(m.label, mx + 17 * dp, my + 29 * dp, pText)
+            mx += 42 * dp
+        }
         pText.color = Color.WHITE
 
         // часы
-        pText.textAlign = Paint.Align.CENTER; pText.textSize = 15 * dp
-        c.drawText("День ${gm.day()}  ${gm.clock()}", W / 2, 24 * dp, pText)
-        pText.textSize = 13 * dp
-        var my = 48 * dp
-        for ((m, ttl) in msgs) { pText.alpha = (min(1f, ttl) * 255).toInt(); c.drawText(m, W / 2, my, pText); my += 18 * dp }
-        pText.alpha = 255
+        val night = gm.darkness() > 0.5f
+        val clock = "День ${gm.day()}  ·  ${gm.clock()}"
+        pText.textAlign = Paint.Align.CENTER; pText.textSize = 14 * dp
+        val tw = pText.measureText(clock) + 44 * dp
+        pFill.color = 0x9A0E1216.toInt(); rect.set(W / 2 - tw / 2, 12 * dp, W / 2 + tw / 2, 42 * dp); c.drawRoundRect(rect, 15 * dp, 15 * dp, pFill)
+        drawGlyph(c, if (night) "moon" else "sun", W / 2 - tw / 2 + 18 * dp, 27 * dp, 10 * dp, if (night) 0xFFB8C8F0.toInt() else 0xFFF0C850.toInt())
+        c.drawText(clock, W / 2 + 10 * dp, 32 * dp, pText)
+        // сообщения
+        pText.textSize = 12.5f * dp
+        var ty = 66 * dp
+        for ((m, ttl) in msgs) {
+            val a = min(1f, ttl)
+            val mw = pText.measureText(m) + 24 * dp
+            pFill.color = Color.argb((150 * a).toInt(), 14, 18, 22); rect.set(W / 2 - mw / 2, ty - 16 * dp, W / 2 + mw / 2, ty + 6 * dp); c.drawRoundRect(rect, 11 * dp, 11 * dp, pFill)
+            pText.alpha = (a * 255).toInt(); c.drawText(m, W / 2, ty, pText); pText.alpha = 255
+            ty += 26 * dp
+        }
         if (mode == Mode.HOST && !initSent) {
             pText.textSize = 12 * dp; pText.color = 0xFFB0D0FF.toInt()
             c.drawText("Ждём друга. Твой IP: $hostIp", W / 2, H - 14 * dp, pText)
@@ -807,39 +663,59 @@ class GameView(
 
         // джойстик
         if (joyPid >= 0) {
-            pFill.color = 0x33FFFFFF; c.drawCircle(joyBX, joyBY, 60 * dp, pFill)
-            val dx = joyX - joyBX; val dy = joyY - joyBY; val l = hypot(dx, dy); val k = if (l > 60 * dp) 60 * dp / l else 1f
-            pFill.color = 0x88FFFFFF.toInt(); c.drawCircle(joyBX + dx * k, joyBY + dy * k, 26 * dp, pFill)
+            pFill.color = 0x30FFFFFF; c.drawCircle(joyBX, joyBY, 62 * dp, pFill)
+            pLine.color = 0x55FFFFFF; pLine.strokeWidth = 2 * dp; c.drawCircle(joyBX, joyBY, 62 * dp, pLine)
+            pLine.color = 0x30FFFFFF; c.drawCircle(joyBX, joyBY, 62 * dp * 0.6f, pLine)
+            val dx = joyX - joyBX; val dy = joyY - joyBY; val l = hypot(dx, dy); val k = if (l > 62 * dp) 62 * dp / l else 1f
+            pFill.color = 0xB0FFFFFF.toInt(); c.drawCircle(joyBX + dx * k, joyBY + dy * k, 24 * dp, pFill)
         } else {
-            pText.textSize = 12 * dp; pText.color = 0x66FFFFFF
-            c.drawText("Веди пальцем слева, чтобы идти", 14 * dp, H - 16 * dp, pText); pText.color = Color.WHITE
+            pText.textSize = 11 * dp; pText.color = 0x77FFFFFF
+            c.drawText("Слева — ходьба. Чуть сдвинь — красться", hudL, H - 16 * dp, pText); pText.color = Color.WHITE
         }
+        // кнопки
         val w = me.weapon()
-        val wl = if (w.kind == ItemKind.GUN) "${w.name} (${me.count("ammo")})" else w.name
-        roundBtn(c, bAttack, 0xAAB03030.toInt(), "Удар", wl)
+        iconBtn(c, bAttack, 0xB0A83030.toInt(), null, if (w.id == "fists") null else w.id, if (w.id == "fists") "fist" else null,
+            if (w.kind == ItemKind.GUN) "${me.count("ammo")}" else null, if (w.id == "fists") "Толчок" else w.name)
+        val tt = if (target >= 0) gm.world.tAt(target) else -1
         val hint = when {
             target < 0 -> "Под ногами"
             gm.world.barrAt(target) > 0 -> "Заколочено"
-            gm.world.tAt(target) == T.DOOR -> "Открыть"
-            gm.world.tAt(target) == T.DOOR_OPEN -> "Закрыть"
-            gm.world.tAt(target) == T.WINDOW -> "Разбить окно"
+            tt == T.DOOR -> "Открыть"
+            tt == T.DOOR_OPEN -> "Закрыть"
+            tt == T.WINDOW -> "Разбить окно"
+            T.isCar(tt) -> "Багажник"
             else -> "Обыскать"
         }
-        roundBtn(c, bInteract, 0xAA306090.toInt(), "Действ.", hint)
-        roundBtn(c, bRun, if (runToggle) 0xCCD0A020.toInt() else 0x77444444, "Бег", null)
-        if (barrCell >= 0) roundBtn(c, bBarr, 0xAA8A6030.toInt(), "Забить", null)
-        roundBtn(c, bInv, 0x99444444.toInt(), "Вещи", null)
+        iconBtn(c, bInteract, 0xB0285A86.toInt(), if (tt == T.DOOR || tt == T.DOOR_OPEN) "door" else if (target >= 0 && tt != T.WINDOW) "search" else "hand", null, null, null, hint)
+        iconBtn(c, bRun, if (runToggle) 0xD0C89A20.toInt() else 0x88303438.toInt(), "run", null, null, null, if (runToggle) "Бег" else null)
+        if (barrCell >= 0) iconBtn(c, bBarr, 0xB08A6030.toInt(), null, "planks", null, "${me.count("planks")}", "Забить")
+        iconBtn(c, bInv, 0x99303438.toInt(), "bag", null, null, null, null)
         val hurt = me.body.parts.any { !it.ok }
-        roundBtn(c, bBody, if (me.bleeding) 0xCCB02020.toInt() else if (hurt) 0xAA8A6A20.toInt() else 0x99444444.toInt(), "Тело", null)
-        roundBtn(c, bPause, 0x99444444.toInt(), "II", null)
+        iconBtn(c, bBody, if (me.bleeding) 0xD0B02020.toInt() else if (hurt) 0xB08A6A20.toInt() else 0x99303438.toInt(), "body", null, null, null, null)
+        iconBtn(c, bPause, 0x99303438.toInt(), "pause", null, null, null, null)
     }
 
-    private fun roundBtn(c: Canvas, b: Btn, col: Int, label: String, sub: String?) {
+    private fun iconBtn(c: Canvas, b: Btn, col: Int, glyphName: String?, itemIcon: String?, glyph2: String?, badge: String?, label: String?) {
+        pFill.color = 0x40000000; c.drawCircle(b.x + 2 * dp, b.y + 3 * dp, b.r, pFill)
         pFill.color = col; c.drawCircle(b.x, b.y, b.r, pFill)
-        pLine.color = 0x66FFFFFF; pLine.strokeWidth = 1.5f * dp; c.drawCircle(b.x, b.y, b.r, pLine)
-        pText.textAlign = Paint.Align.CENTER; pText.textSize = (if (b.r > 40 * dp) 16 else 12) * dp
-        c.drawText(label, b.x, b.y + pText.textSize * 0.35f, pText)
-        if (sub != null) { pText.textSize = 11 * dp; c.drawText(sub, b.x, b.y - b.r - 6 * dp, pText) }
+        pLine.color = 0x50FFFFFF; pLine.strokeWidth = 1.5f * dp; c.drawCircle(b.x, b.y, b.r - 1 * dp, pLine)
+        when {
+            itemIcon != null -> Icons.draw(c, itemIcon, b.x, b.y, b.r * 1.35f)
+            glyph2 != null -> drawGlyph(c, glyph2, b.x, b.y, b.r * 0.6f)
+            glyphName != null -> drawGlyph(c, glyphName, b.x, b.y, b.r * 0.55f)
+        }
+        if (badge != null) {
+            pText.textAlign = Paint.Align.CENTER; pText.textSize = 11 * dp
+            val bw = pText.measureText(badge) + 10 * dp
+            pFill.color = 0xFF1A1E22.toInt(); rect.set(b.x + b.r * 0.4f, b.y + b.r * 0.45f, b.x + b.r * 0.4f + bw, b.y + b.r * 0.45f + 17 * dp); c.drawRoundRect(rect, 8 * dp, 8 * dp, pFill)
+            c.drawText(badge, rect.centerX(), rect.bottom - 4.5f * dp, pText)
+        }
+        if (label != null) {
+            pText.textAlign = Paint.Align.CENTER; pText.textSize = 11 * dp
+            pText.setShadowLayer(3 * dp, 0f, 1 * dp, Color.BLACK)
+            c.drawText(label, b.x, b.y - b.r - 6 * dp, pText)
+            pText.clearShadowLayer()
+        }
         pText.textAlign = Paint.Align.LEFT
     }
 
@@ -865,30 +741,6 @@ class GameView(
             c.drawText(s.def.name + if (s.n > 1) " ×${s.n}" else "", col.left + 36 * dp, top + rowH / 2 + 5 * dp, pText)
         }
         c.restore()
-    }
-
-    private fun onTileEvent(w: World, i: Int, from: Int, to: Int) {
-        val cx = i % w.w + 0.5f; val cy = i / w.w + 0.5f
-        if ((from == T.DOOR && to == T.DOOR_OPEN) || (from == T.DOOR_OPEN && to == T.DOOR)) {
-            doorAngle[i] = doorAngle[i] ?: (if (from == T.DOOR_OPEN) 90f else 0f)
-        }
-        fun burst(n: Int, col: Int, size: Float, speed: Float, life: Float) {
-            repeat(n) {
-                val a = prnd.nextFloat() * 6.283f; val sp = speed * (0.3f + prnd.nextFloat())
-                particles.add(Particle(cx + (prnd.nextFloat() - 0.5f) * 0.6f, cy + (prnd.nextFloat() - 0.5f) * 0.6f,
-                    kotlin.math.cos(a) * sp, kotlin.math.sin(a) * sp, life * (0.6f + prnd.nextFloat() * 0.6f), life * 1.2f,
-                    col, size * (0.5f + prnd.nextFloat()), prnd.nextFloat() * 360f, (prnd.nextFloat() - 0.5f) * 900f))
-            }
-        }
-        if (from == T.WINDOW && to == T.WINDOW_BROKEN) {
-            burst(22, 0xFFBFE8F8.toInt(), 0.07f, 3.2f, 1.6f)
-            burst(8, 0xFFFFFFFF.toInt(), 0.04f, 4f, 0.9f)
-        }
-        if (T.isDoorLike(from) && to == T.DOOR_BROKEN) {
-            burst(16, 0xFFA97A48.toInt(), 0.09f, 2.6f, 1.8f)
-            burst(8, 0xFF6E4A2A.toInt(), 0.06f, 3f, 1.4f)
-        }
-        if (particles.size > 400) particles.subList(0, particles.size - 400).clear()
     }
 
     private fun mostHurt(me: Player): Int {

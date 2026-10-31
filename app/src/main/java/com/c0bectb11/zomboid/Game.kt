@@ -21,6 +21,13 @@ class Player(var id: Int) {
     val body = Body()
     val bleeding get() = body.bleeding
     var lastCell = -1
+    var sneaking = false
+    // действие со временем (обыск, перевязка, баррикада…)
+    var taAct: Act? = null
+    var taName = ""
+    var taTime = 0f
+    var taDur = 0f
+    val taProgress get() = if (taDur > 0f) (taTime / taDur).coerceIn(0f, 1f) else 0f
     var infection = 0f                 // секунды с момента укуса, 0 — здоров
     var dead = false
     var kills = 0
@@ -58,6 +65,8 @@ class Zombie(val id: Int) {
     var stagger = 0f
     var bashT = 0f
     var speed = 1f
+    var down = 0f                     // сбит с ног
+    val skin get() = id % 6
     // отрисовка
     var rx = 0f; var ry = 0f
     var anim = Random.nextFloat() * 10f
@@ -90,6 +99,11 @@ class Game(val seed: Long) {
     val actions = java.util.concurrent.ConcurrentLinkedQueue<Pair<Int, Act>>()
     val messages = HashMap<Int, MutableList<String>>()
     val shots = ArrayList<FloatArray>()   // вспышки выстрелов для отрисовки [x1,y1,x2,y2,t]
+    /** Эффекты для отрисовки: [тип, x, y, параметр]. 1 — кровь зомби, 2 — смерть зомби, 3 — ранен игрок (параметр = id), 4 — выстрел */
+    val fx = ArrayList<FloatArray>()
+    private val fxNet = ArrayList<FloatArray>()
+    fun addFx(type: Int, x: Float, y: Float, a: Float) { val f = floatArrayOf(type.toFloat(), x, y, a); fx.add(f); fxNet.add(f); if (fxNet.size > 60) fxNet.removeAt(0) }
+    fun clearNetFx() = fxNet.clear()
 
     companion object {
         const val PLAYER_R = 0.3f
@@ -104,6 +118,7 @@ class Game(val seed: Long) {
             p.inv.add(Stack("water", 1)); p.inv.add(Stack("chips", 1)); p.inv.add(Stack("bandage", 1))
             g.players.add(p)
             g.spawnZombies(140, sx, sy)
+            g.world.computeBuildings()
             return g
         }
     }
@@ -189,7 +204,8 @@ class Game(val seed: Long) {
         val mag = hypot(p.mx, p.my)
         val heavy = p.weight() > MAX_WEIGHT
         var running = p.run && p.stamina > 1f && mag > 0.1f
-        var speed = 2.3f
+        p.sneaking = !running && mag in 0.1f..0.6f
+        var speed = if (p.sneaking) 1.25f else 2.3f
         if (running) speed = 3.9f
         if (heavy) { speed *= 0.6f; running = false }
         if (p.stamina < 10f) speed *= 0.8f
@@ -213,7 +229,13 @@ class Game(val seed: Long) {
             if (running) {
                 p.stamina -= dt * 12f
                 if (rnd.nextFloat() < dt * 1.2f) noise(p.x, p.y, 6f, p)
-            }
+            } else if (!p.sneaking && rnd.nextFloat() < dt * 0.5f) noise(p.x, p.y, 2.5f, p)
+            if (p.taAct != null) { p.taAct = null; msg(p.id, "Прервано") }
+        }
+        // действие со временем
+        p.taAct?.let { a ->
+            p.taTime += dt
+            if (p.taTime >= p.taDur) { p.taAct = null; perform(p, a) }
         }
         if (!running) p.stamina = (p.stamina + dt * (if (mag > 0.1f) 6f else 12f)).coerceAtMost(100f)
         // голод и жажда (полная шкала за ~2 и ~1.3 игровых дня)
@@ -252,6 +274,7 @@ class Game(val seed: Long) {
 
     private fun updateZombie(z: Zombie, dt: Float) {
         z.attackCd -= dt; z.anim += dt
+        if (z.down > 0f) { z.down -= dt; return }
         if (z.stagger > 0f) { z.stagger -= dt; return }
         // активна только рядом с игроками — дальние бродят реже
         val near = players.filter { !it.dead && it.connected }.minByOrNull { hypot(it.x - z.x, it.y - z.y) }
@@ -261,7 +284,7 @@ class Game(val seed: Long) {
         if (z.senseT <= 0f && near != null && nd < 22f) {
             z.senseT = 0.3f
             val dark = darkness()
-            val sight = 11f - 6f * dark
+            val sight = (11f - 6f * dark) * (if (near.sneaking) 0.5f else 1f)
             if (nd < sight && world.los(z.x, z.y, near.x, near.y)) {
                 // смотрит ли зомби в сторону игрока (или игрок очень близко)
                 val dot = ((near.x - z.x) * z.fx + (near.y - z.y) * z.fy) / maxOf(nd, 0.01f)
@@ -293,7 +316,7 @@ class Game(val seed: Long) {
                     gx = bx - z.x; gy = by - z.y
                 } else { gx = near.x - z.x; gy = near.y - z.y }
             }
-            if (nd < 0.8f && z.attackCd <= 0f) attackPlayer(z, near)
+            if (nd < 0.8f && z.attackCd <= 0f) { attackPlayer(z, near); near.taAct = null }
         } else if (!z.tx.isNaN()) {
             gx = z.tx - z.x; gy = z.ty - z.y
             if (hypot(gx, gy) < 0.6f) { z.tx = Float.NaN; z.ty = Float.NaN }
@@ -344,6 +367,7 @@ class Game(val seed: Long) {
         z.attackCd = 1.3f
         if (rnd.nextFloat() > 0.55f) return
         val part = BP.randomZombieTarget(rnd)
+        addFx(3, p.x, p.y, p.id.toFloat())
         val pname = BP.names[part].lowercase()
         val r = rnd.nextFloat()
         when {
@@ -382,7 +406,34 @@ class Game(val seed: Long) {
     }
 
     // ================== ДЕЙСТВИЯ ==================
+    /** Сколько времени занимает действие (0 — мгновенно) и как оно называется */
+    private fun timing(p: Player, a: Act): Pair<Float, String> = when (a) {
+        is Act.Interact -> {
+            val t = if (a.cell in world.tiles.indices) world.tAt(a.cell) else -1
+            if (T.isContainer(t) && !world.containers.containsKey(a.cell)) 0.9f to "Обыск" else 0f to ""
+        }
+        is Act.Barricade -> 2.6f to "Заколачиваю"
+        is Act.Treat -> when (a.what) { "bandage", "rag" -> 2.2f to "Перевязка"; "disinfect" -> 1.4f to "Обработка"; "glass" -> 3f to "Достаю стекло"; else -> 0f to "" }
+        is Act.Use -> when (Items.get(a.id).kind) {
+            ItemKind.FOOD -> 1.6f to "Ем"; ItemKind.DRINK -> 1.2f to "Пью"
+            ItemKind.MED -> if (a.id == "pills") 0.8f to "Таблетки" else 2.2f to "Лечение"
+            else -> 0f to ""
+        }
+        else -> 0f to ""
+    }
+
     private fun doAction(p: Player, a: Act) {
+        if (a is Act.Attack) p.taAct = null
+        val (dur, name) = timing(p, a)
+        if (dur > 0f) {
+            if (p.taAct != null) return
+            p.taAct = a; p.taDur = dur; p.taTime = 0f; p.taName = name
+            return
+        }
+        perform(p, a)
+    }
+
+    private fun perform(p: Player, a: Act) {
         when (a) {
             is Act.Attack -> attack(p)
             is Act.Interact -> interact(p, a.cell)
@@ -413,7 +464,10 @@ class Game(val seed: Long) {
     }
 
     fun nearCell(p: Player, cell: Int, dist: Float): Boolean {
-        val cx = cell % world.w + 0.5f; val cy = cell / world.w + 0.5f
+        if (cell !in world.tiles.indices) return false
+        var cx = cell % world.w + 0.5f; var cy = cell / world.w + 0.5f
+        when (world.tAt(cell)) { T.CAR -> cx += 0.5f; T.CAR_V -> cy += 0.5f }
+        if (T.isCar(world.tAt(cell))) return hypot(cx - p.x, cy - p.y) < dist + 0.9f
         return hypot(cx - p.x, cy - p.y) < dist
     }
 
@@ -434,16 +488,24 @@ class Game(val seed: Long) {
                 if (rnd.nextFloat() < 0.85f - d * 0.02f) hitZombie(p, target, w.dmg * (0.8f + rnd.nextFloat() * 0.4f))
             }
             shots.add(floatArrayOf(p.x + p.fx * 0.4f, p.y + p.fy * 0.4f, ex, ey, 0.08f))
+            addFx(4, p.x + p.fx * 0.55f, p.y + p.fy * 0.55f, p.id.toFloat())
             noise(p.x, p.y, w.noise, p)
             return
         }
         p.stamina = (p.stamina - 4f).coerceAtLeast(0f)
         val reach = w.range + ZOMBIE_R
-        val cands = zombies.filter { hypot(it.x - p.x, it.y - p.y) < reach }
-        var target = cands.filter {
-            val d = hypot(it.x - p.x, it.y - p.y)
-            ((it.x - p.x) * p.fx + (it.y - p.y) * p.fy) / maxOf(d, 0.01f) > 0.35f
-        }.minByOrNull { hypot(it.x - p.x, it.y - p.y) }
+        fun inFront(z: Zombie): Boolean { val d = hypot(z.x - p.x, z.y - p.y); return ((z.x - p.x) * p.fx + (z.y - p.y) * p.fy) / maxOf(d, 0.01f) > 0.35f }
+        // добить лежачего
+        val downed = zombies.filter { it.down > 0f && hypot(it.x - p.x, it.y - p.y) < 1.2f }.minByOrNull { hypot(it.x - p.x, it.y - p.y) }
+        if (downed != null && (zombies.none { it.down <= 0f && hypot(it.x - p.x, it.y - p.y) < reach && inFront(it) })) {
+            val d = maxOf(hypot(downed.x - p.x, downed.y - p.y), 0.01f)
+            p.fx = (downed.x - p.x) / d; p.fy = (downed.y - p.y) / d
+            hitZombie(p, downed, maxOf(28f, w.dmg * 1.6f) * p.body.armPenalty())
+            noise(p.x, p.y, w.noise, p)
+            return
+        }
+        val cands = zombies.filter { it.down <= 0f && hypot(it.x - p.x, it.y - p.y) < reach }
+        var target = cands.filter { inFront(it) }.minByOrNull { hypot(it.x - p.x, it.y - p.y) }
         if (target == null) target = cands.minByOrNull { hypot(it.x - p.x, it.y - p.y) }
         val tz = target
         if (tz != null) {
@@ -453,6 +515,9 @@ class Game(val seed: Long) {
             hitZombie(p, tz, w.dmg * weak * p.body.armPenalty() * (0.8f + rnd.nextFloat() * 0.4f))
             moveCircle(tz.x, tz.y, p.fx * 0.35f, p.fy * 0.35f, ZOMBIE_R) { x, y -> tz.x = x; tz.y = y }
             tz.stagger = 0.45f
+            // сбить с ног: тяжёлое оружие или толчок руками
+            val kd = when { w.id == "fists" -> 0.3f; w.dmg >= 35f -> 0.35f; else -> 0.12f }
+            if (tz.hp > 0f && rnd.nextFloat() < kd * weak) { tz.down = 2.2f + rnd.nextFloat() * 1.5f; tz.stagger = 0f }
         }
         noise(p.x, p.y, w.noise, p)
     }
@@ -460,7 +525,8 @@ class Game(val seed: Long) {
     private fun hitZombie(p: Player, z: Zombie, dmg: Float) {
         z.hp -= dmg
         z.chase = 10f
-        if (z.hp <= 0f) p.kills++
+        addFx(1, z.x, z.y, kotlin.math.atan2(z.y - p.y, z.x - p.x))
+        if (z.hp <= 0f) { p.kills++; addFx(2, z.x, z.y, 0f) }
     }
 
     private fun interact(p: Player, cell: Int) {
@@ -481,7 +547,7 @@ class Game(val seed: Long) {
                     wound(p, hand, WT.GLASS); msg(p.id, "Разбил окно рукой — в ране стекло")
                 } else msg(p.id, "Ты разбил окно")
             }
-            T.isFurniture(t) || world.containers.containsKey(cell) -> world.openContainer(cell, rnd)
+            T.isContainer(t) || world.containers.containsKey(cell) -> world.openContainer(cell, rnd)
         }
     }
 
@@ -574,9 +640,10 @@ class Game(val seed: Long) {
         val px = floor(p.x).toInt(); val py = floor(p.y).toInt()
         for (y in py - 1..py + 1) for (x in px - 1..px + 1) {
             if (!world.inside(x, y)) continue
-            val i = world.idx(x, y)
-            val t = world.tAt(i)
-            val useful = T.isFurniture(t) || t == T.DOOR || t == T.DOOR_OPEN || t == T.WINDOW ||
+            var i = world.idx(x, y)
+            var t = world.tAt(i)
+            if (t == T.CAR_TAIL) { i = world.carHead(i); if (i < 0) continue; t = world.tAt(i) }
+            val useful = T.isContainer(t) || t == T.DOOR || t == T.DOOR_OPEN || t == T.WINDOW ||
                 (world.containers[i]?.isNotEmpty() == true)
             if (!useful) continue
             val cx = x + 0.5f; val cy = y + 0.5f
@@ -610,6 +677,7 @@ class Game(val seed: Long) {
         put("hp", r2(p.hp)); put("hu", r2(p.hunger)); put("th", r2(p.thirst)); put("st", r2(p.stamina))
         put("body", p.body.toJson()); put("inf", r2(p.infection)); put("dead", p.dead); put("k", p.kills)
         put("eq", p.eq ?: ""); put("inv", invJson(p.inv)); put("aa", r2(p.attackAnim)); put("con", p.connected)
+        put("sn", p.sneaking); put("tn", if (p.taAct != null) p.taName else ""); put("tp", r2(p.taProgress))
     }
 
     fun playerFrom(o: JSONObject, p: Player) {
@@ -620,6 +688,9 @@ class Game(val seed: Long) {
         p.dead = o.getBoolean("dead"); p.kills = o.optInt("k"); p.eq = o.optString("eq").ifEmpty { null }
         invFrom(o.optJSONArray("inv"), p.inv); p.attackAnim = o.optDouble("aa", 0.0).toFloat()
         p.connected = o.optBoolean("con", true)
+        p.sneaking = o.optBoolean("sn")
+        val tn = o.optString("tn")
+        if (tn.isNotEmpty()) { p.taName = tn; p.taDur = 1f; p.taTime = o.optDouble("tp", 0.0).toFloat(); if (p.taAct == null) p.taAct = Act.Attack } else p.taAct = null
     }
 
     private fun r2(f: Float): Double = Math.round(f * 100.0) / 100.0
@@ -641,6 +712,7 @@ class Game(val seed: Long) {
         time = o.getDouble("time").toFloat()
         val t = Base64.decode(o.getString("tiles"), Base64.NO_WRAP)
         System.arraycopy(t, 0, world.tiles, 0, minOf(t.size, world.tiles.size))
+        world.computeBuildings()
         world.tileHp.clear(); o.optJSONArray("thp")?.let { for (i in 0 until it.length()) { val e = it.getJSONArray(i); world.tileHp[e.getInt(0)] = e.getDouble(1).toFloat() } }
         world.barr.clear(); o.optJSONArray("barr")?.let { for (i in 0 until it.length()) { val e = it.getJSONArray(i); world.barr[e.getInt(0)] = e.getInt(1) } }
         world.containers.clear()
@@ -666,8 +738,9 @@ class Game(val seed: Long) {
         val o = JSONObject()
         o.put("t", "snap"); o.put("time", time.toDouble())
         val ps = JSONArray(); for (p in players) ps.put(playerJson(p)); o.put("p", ps)
+        if (fxNet.isNotEmpty()) { val a = JSONArray(); for (f in fxNet) a.put(JSONArray().put(f[0].toDouble()).put(r2(f[1])).put(r2(f[2])).put(r2(f[3]))); o.put("fx", a); fxNet.clear() }
         val zs = JSONArray()
-        for (z in zombies) zs.put(JSONArray().put(z.id).put(r2(z.x)).put(r2(z.y)).put(r2(z.fx)).put(r2(z.fy)).put(if (z.chase > 0f) 1 else 0))
+        for (z in zombies) zs.put(JSONArray().put(z.id).put(r2(z.x)).put(r2(z.y)).put(r2(z.fx)).put(r2(z.fy)).put(if (z.chase > 0f) 1 else 0).put(if (z.down > 0f) 1 else 0).put(z.hp <= 0f))
         o.put("z", zs)
         if (world.dirtyTiles.isNotEmpty()) {
             val a = JSONArray(); for (i in world.dirtyTiles) a.put(JSONArray().put(i).put(world.tAt(i)).put(world.barrAt(i))); o.put("tc", a)
@@ -699,7 +772,7 @@ class Game(val seed: Long) {
             val e = zs.getJSONArray(i); val id = e.getInt(0)
             val z = byId[id] ?: Zombie(id).also { it.rx = e.getDouble(1).toFloat(); it.ry = e.getDouble(2).toFloat() }
             z.x = e.getDouble(1).toFloat(); z.y = e.getDouble(2).toFloat()
-            z.fx = e.getDouble(3).toFloat(); z.fy = e.getDouble(4).toFloat(); z.chase = e.getInt(5).toFloat()
+            z.fx = e.getDouble(3).toFloat(); z.fy = e.getDouble(4).toFloat(); z.chase = e.getInt(5).toFloat(); z.down = e.optInt(6).toFloat()
             next.add(z)
         }
         zombies.clear(); zombies.addAll(next)
@@ -712,6 +785,7 @@ class Game(val seed: Long) {
         } }
         o.optJSONObject("cc")?.let { co -> for (k in co.keys()) { val l = ArrayList<Stack>(); invFrom(co.getJSONArray(k), l); world.containers[k.toInt()] = l } }
         o.optJSONArray("m")?.let { for (i in 0 until it.length()) onMsg(it.getString(i)) }
+        o.optJSONArray("fx")?.let { for (i in 0 until it.length()) { val e = it.getJSONArray(i); fx.add(floatArrayOf(e.getDouble(0).toFloat(), e.getDouble(1).toFloat(), e.getDouble(2).toFloat(), e.getDouble(3).toFloat())) } }
         o.optJSONArray("sh")?.let { for (i in 0 until it.length()) { val e = it.getJSONArray(i); shots.add(floatArrayOf(e.getDouble(0).toFloat(), e.getDouble(1).toFloat(), e.getDouble(2).toFloat(), e.getDouble(3).toFloat(), 0.08f)) } }
         o.optJSONArray("cp")?.let { corpses.clear(); for (i in 0 until it.length()) { val e = it.getJSONArray(i); corpses.add(Corpse(e.getDouble(0).toFloat(), e.getDouble(1).toFloat(), e.getBoolean(2))) } }
     }

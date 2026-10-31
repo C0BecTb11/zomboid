@@ -26,12 +26,12 @@ class Sprites(ctx: Context) {
     operator fun get(name: String): Bitmap? = map[name]
 
     /** Тайл целиком в клетку (с округлением, чтобы не было щелей) */
-    fun tile(c: Canvas, name: String, sx: Float, sy: Float, ts: Float): Boolean {
+    fun tile(c: Canvas, name: String, sx: Float, sy: Float, ts: Float, p: Paint = paint): Boolean {
         val b = map[name] ?: return false
         src.set(0, 0, b.width, b.height)
         dst.set(Math.floor(sx.toDouble()).toFloat(), Math.floor(sy.toDouble()).toFloat(),
             Math.ceil((sx + ts).toDouble()).toFloat(), Math.ceil((sy + ts).toDouble()).toFloat())
-        c.drawBitmap(b, src, dst, paint)
+        c.drawBitmap(b, src, dst, p)
         return true
     }
 

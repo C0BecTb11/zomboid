@@ -25,6 +25,12 @@ object T {
     const val MEDCAB = 16
     const val LOCKER = 17
     const val STORESHELF = 18
+    const val CAR = 19          // машина горизонтально: голова (x,y), хвост (x+1,y)
+    const val CAR_V = 20        // вертикально: голова (x,y), хвост (x,y+1)
+    const val CAR_TAIL = 21
+
+    fun isCar(t: Int) = t in CAR..CAR_TAIL
+    fun isContainer(t: Int) = isFurniture(t) || t == CAR || t == CAR_V
 
     fun isFurniture(t: Int) = t in FRIDGE..STORESHELF
     fun isDoorLike(t: Int) = t == DOOR || t == DOOR_OPEN || t == DOOR_BROKEN
@@ -57,7 +63,7 @@ class World(val w: Int, val h: Int) {
         if (barrAt(i) > 0) return true
         return when (tAt(i)) {
             T.WALL, T.DOOR, T.WINDOW, T.TREE -> true
-            else -> T.isFurniture(tAt(i))
+            else -> T.isFurniture(tAt(i)) || T.isCar(tAt(i))
         }
     }
 
@@ -110,7 +116,7 @@ class World(val w: Int, val h: Int) {
 
     fun moveCost(i: Int): Int {
         val t = tAt(i)
-        if (t == T.WALL || t == T.TREE || T.isFurniture(t)) return -1
+        if (t == T.WALL || t == T.TREE || T.isFurniture(t) || T.isCar(t)) return -1
         var c = 10
         if (t == T.WINDOW_BROKEN) c += 10
         if (t == T.DOOR || t == T.WINDOW) c += 60
@@ -179,6 +185,22 @@ class World(val w: Int, val h: Int) {
                 }
                 if (kind < 0) { scatterTrees(rnd, lotX, lotY, 10, 10); continue }
                 buildHouse(rnd, lotX, lotY, ly == 0, kind)
+            }
+        }
+        // брошенные машины на дорогах
+        val nRoads = w / step
+        for (k in 0..nRoads) {
+            val r0 = k * step
+            for (b in 0 until nRoads) {
+                val s0 = b * step
+                if (rnd.nextFloat() < 0.6f) {          // горизонтальная дорога
+                    val x = s0 + 5 + rnd.nextInt(15); val y = r0 + if (rnd.nextBoolean()) 0 else 2
+                    if (t(x, y) == T.ROAD && t(x + 1, y) == T.ROAD && y < h) { set(x, y, T.CAR); set(x + 1, y, T.CAR_TAIL) }
+                }
+                if (rnd.nextFloat() < 0.6f) {          // вертикальная
+                    val y = s0 + 5 + rnd.nextInt(15); val x = r0 + if (rnd.nextBoolean()) 0 else 2
+                    if (t(x, y) == T.ROAD && t(x, y + 1) == T.ROAD && x < w) { set(x, y, T.CAR_V); set(x, y + 1, T.CAR_TAIL) }
+                }
             }
         }
         // пара деревьев на газонах
@@ -292,6 +314,44 @@ class World(val w: Int, val h: Int) {
         }
     }
 
+    /** Голова машины для клетки-хвоста */
+    fun carHead(i: Int): Int {
+        val x = i % w; val y = i / w
+        if (t(x - 1, y) == T.CAR) return idx(x - 1, y)
+        if (t(x, y - 1) == T.CAR_V) return idx(x, y - 1)
+        return -1
+    }
+
+    // ---------- здания (для крыш) ----------
+    /** [x0, y0, x1, y1] каждого здания и номер здания для клетки */
+    val buildings = ArrayList<IntArray>()
+    val buildingOf = IntArray(w * h) { -1 }
+
+    private fun isBuildingTile(t: Int) = t == T.WALL || T.isFloor(t) || T.isDoorLike(t) || T.isWindowLike(t) || T.isFurniture(t)
+
+    fun computeBuildings() {
+        buildings.clear(); java.util.Arrays.fill(buildingOf, -1)
+        val q = IntArray(w * h)
+        for (start in 0 until w * h) {
+            if (buildingOf[start] >= 0 || !isBuildingTile(tAt(start))) continue
+            val id = buildings.size
+            var x0 = w; var y0 = h; var x1 = 0; var y1 = 0
+            var head = 0; var tail = 0
+            q[tail++] = start; buildingOf[start] = id
+            while (head < tail) {
+                val i = q[head++]; val x = i % w; val y = i / w
+                x0 = minOf(x0, x); y0 = minOf(y0, y); x1 = maxOf(x1, x); y1 = maxOf(y1, y)
+                for (k in 0 until 4) {
+                    val nx = x + DX4[k]; val ny = y + DY4[k]
+                    if (!inside(nx, ny)) continue
+                    val ni = idx(nx, ny)
+                    if (buildingOf[ni] < 0 && isBuildingTile(tAt(ni))) { buildingOf[ni] = id; q[tail++] = ni }
+                }
+            }
+            buildings.add(intArrayOf(x0, y0, x1, y1))
+        }
+    }
+
     fun lootFor(t: Int): List<Items.Loot>? = when (t) {
         T.FRIDGE -> Items.lootFridge
         T.COUNTER -> Items.lootCounter
@@ -300,6 +360,7 @@ class World(val w: Int, val h: Int) {
         T.MEDCAB -> Items.lootMed
         T.LOCKER -> Items.lootPolice
         T.STORESHELF -> Items.lootStore
+        T.CAR, T.CAR_V -> Items.lootCar
         else -> null
     }
 
