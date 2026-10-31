@@ -23,7 +23,10 @@ void vertex() {
 
 void fragment() {
 	// стены между камерой и игроком прорезаются
-	if (kind < 0.25 && cut > 0.5 && wpos.y > 0.55) {
+	// только для камеры игрока (перспектива); в проходе теней солнца (ортогональная проекция) стены целые —
+	// иначе тень зависела от поворота камеры и «срезанная» стена давала тень без крыши
+	bool persp = PROJECTION_MATRIX[3][3] < 0.5;
+	if (persp && kind < 0.25 && cut > 0.5 && wpos.y > 0.55) {
 		vec2 d = wpos.xz - player_pos.xz;
 		float along = dot(d, cam_back);
 		float side = abs(d.x * cam_back.y - d.y * cam_back.x);

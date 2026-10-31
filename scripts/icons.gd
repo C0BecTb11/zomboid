@@ -107,6 +107,63 @@ static func item(ci: CanvasItem, id: String, c: Vector2, size: float) -> void:
 			ci.draw_set_transform(c - Vector2(48, 48) * k, 0.0, Vector2(k, k))
 			_poly(ci, [Vector2(10, 44), Vector2(82, 18), Vector2(86, 32), Vector2(14, 58)], Color8(0xB0, 0x7A, 0x44))
 			_poly(ci, [Vector2(14, 66), Vector2(86, 40), Vector2(90, 54), Vector2(18, 80)], Color8(0xC0, 0x8A, 0x54))
+		"cap":
+			var cc: Color = Items.def(id)["color"]
+			_poly(ci, [Vector2(20, 58), Vector2(22, 38), Vector2(36, 24), Vector2(60, 24), Vector2(74, 38), Vector2(76, 58)], cc)
+			_poly(ci, [Vector2(52, 58), Vector2(90, 56), Vector2(88, 66), Vector2(50, 66)], cc.darkened(0.3))
+			ci.draw_circle(Vector2(48, 24), 4, cc.darkened(0.3))
+		"beanie":
+			var bc: Color = Items.def(id)["color"]
+			_poly(ci, [Vector2(20, 64), Vector2(22, 40), Vector2(34, 24), Vector2(62, 24), Vector2(74, 40), Vector2(76, 64)], bc)
+			_rr(ci, Rect2(16, 56, 64, 18), 6, bc.darkened(0.3))
+			_circ(ci, Vector2(48, 18), 9, bc.lightened(0.2))
+		"helmet":
+			_circ(ci, Vector2(48, 50), 32, Color8(0x2A, 0x2A, 0x2E))
+			_rr(ci, Rect2(26, 44, 50, 18), 6, Color8(0x6A, 0x8A, 0xA8))
+			_rr(ci, Rect2(44, 14, 8, 26), 3, Color8(0xC0, 0x30, 0x30), false)
+		"hoodie", "leather", "mil_jacket":
+			var jc: Color = Items.def(id)["color"]
+			_poly(ci, [Vector2(30, 18), Vector2(66, 18), Vector2(88, 40), Vector2(80, 50), Vector2(70, 42), Vector2(70, 84), Vector2(26, 84), Vector2(26, 42), Vector2(16, 50), Vector2(8, 40)], jc)
+			ci.draw_line(Vector2(48, 24), Vector2(48, 82), jc.darkened(0.35) if id != "leather" else Color8(0xC8, 0xC8, 0xC0), 3.0)
+			if id == "hoodie":
+				_poly(ci, [Vector2(34, 18), Vector2(48, 32), Vector2(62, 18), Vector2(56, 10), Vector2(40, 10)], jc.darkened(0.25))
+				_rr(ci, Rect2(34, 60, 28, 14), 3, jc.darkened(0.25), false)
+			elif id == "leather":
+				_poly(ci, [Vector2(34, 18), Vector2(48, 38), Vector2(40, 40)], jc.darkened(0.4))
+				_poly(ci, [Vector2(62, 18), Vector2(48, 38), Vector2(56, 40)], jc.darkened(0.4))
+			else:
+				_rr(ci, Rect2(30, 36, 14, 12), 2, jc.darkened(0.3), false)
+				_rr(ci, Rect2(52, 36, 14, 12), 2, jc.darkened(0.3), false)
+		"jeans", "cargo":
+			var pc: Color = Items.def(id)["color"]
+			_poly(ci, [Vector2(26, 12), Vector2(70, 12), Vector2(76, 86), Vector2(54, 86), Vector2(48, 40), Vector2(42, 86), Vector2(20, 86)], pc)
+			ci.draw_line(Vector2(26, 20), Vector2(70, 20), pc.darkened(0.4), 3.0)
+			if id == "cargo":
+				_rr(ci, Rect2(14, 44, 12, 16), 2, pc.darkened(0.3), false)
+				_rr(ci, Rect2(70, 44, 12, 16), 2, pc.darkened(0.3), false)
+		"boots":
+			var tc: Color = Items.def(id)["color"]
+			_poly(ci, [Vector2(30, 14), Vector2(54, 14), Vector2(56, 58), Vector2(84, 64), Vector2(86, 80), Vector2(28, 80)], tc)
+			_rr(ci, Rect2(26, 78, 62, 8), 2, Color8(0x1A, 0x16, 0x12), false)
+			for i in 3:
+				ci.draw_line(Vector2(36, 26 + i * 10), Vector2(50, 26 + i * 10), tc.lightened(0.35), 2.5)
+		"gloves":
+			var gc: Color = Items.def(id)["color"]
+			_poly(ci, [Vector2(28, 86), Vector2(28, 44), Vector2(18, 34), Vector2(26, 28), Vector2(34, 36), Vector2(34, 14), Vector2(42, 12), Vector2(44, 34), Vector2(46, 10), Vector2(54, 10), Vector2(56, 34), Vector2(58, 14), Vector2(66, 16), Vector2(66, 40), Vector2(70, 22), Vector2(78, 24), Vector2(72, 60), Vector2(68, 86)], gc)
+			_rr(ci, Rect2(26, 72, 44, 14), 2, gc.darkened(0.3), false)
+		"bp_school", "bp_military", "bp_hiking":
+			var pk: Color = Items.def(id)["color"]
+			var tall := 0 if id != "bp_hiking" else 8
+			ci.draw_arc(Vector2(48, 20 - tall), 10, PI, TAU, 12, OUT, 5.0, true)
+			_rr(ci, Rect2(20, 18 - tall, 56, 68 + tall), 14 if id != "bp_military" else 6, pk)
+			_rr(ci, Rect2(18, 18 - tall, 60, 20), 8, pk.darkened(0.3))
+			_rr(ci, Rect2(28, 52, 40, 26), 6, pk.darkened(0.2) if id != "bp_school" else Color8(0x55, 0x5A, 0x60))
+			ci.draw_line(Vector2(32, 56), Vector2(64, 56), Color8(0xC8, 0xC8, 0xC0), 2.0)
+			if id == "bp_hiking":
+				_rr(ci, Rect2(14, 2, 68, 14), 7, Color8(0x3E, 0x8A, 0x4A))
+			if id == "bp_military":
+				for i in 3:
+					ci.draw_line(Vector2(24, 44 + i * 6), Vector2(72, 44 + i * 6), Color8(0x26, 0x26, 0x24), 2.0)
 		_:
 			_circ(ci, Vector2(48, 48), 26, Items.def(id)["color"])
 	ci.draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
@@ -181,6 +238,9 @@ static func glyph(ci: CanvasItem, kind: String, c: Vector2, r: float, col: Color
 			Icons._sb.border_width_bottom = 0
 			Icons._sb.draw(ci.get_canvas_item(), Rect2(c + Vector2(-0.5, -0.3) * r, Vector2(1.0, 0.95) * r))
 			ci.draw_arc(c + Vector2(0, -0.35) * r, r * 0.22, PI, TAU, 12, col, w, true)
+		"gear":
+			ci.draw_colored_polygon(PackedVector2Array([c + Vector2(-0.25, -0.6) * r, c + Vector2(0.25, -0.6) * r, c + Vector2(0.7, -0.25) * r, c + Vector2(0.5, 0.0) * r, c + Vector2(0.35, -0.12) * r, c + Vector2(0.35, 0.65) * r, c + Vector2(-0.35, 0.65) * r, c + Vector2(-0.35, -0.12) * r, c + Vector2(-0.5, 0.0) * r, c + Vector2(-0.7, -0.25) * r]), col)
+			ci.draw_arc(c + Vector2(0, -0.6) * r, r * 0.16, 0, PI, 8, Color(0.1, 0.1, 0.12), r * 0.1, true)
 		"body":
 			ci.draw_circle(c + Vector2(0, -0.5) * r, r * 0.2, col)
 			ci.draw_rect(Rect2(c + Vector2(-0.25, -0.25) * r, Vector2(0.5, 0.5) * r), col)

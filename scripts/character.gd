@@ -348,3 +348,235 @@ func pose(phase: float, moving: float, attack: float, weapon_id: String, lying: 
 			side = lerpf(side, s2 * 30.0, sin(PI * ly))
 		_rot(bi2, sh, side)
 		_rot(bi2 + 1, el)
+
+# ================== ОДЕЖДА И СНАРЯЖЕНИЕ ==================
+static var _wear_cache := {}
+var wear_nodes := {}          # слот → MeshInstance3D
+var wear_ids := {}            # слот → id (что сейчас показано)
+
+## Показать надетое: меши «натянуты» на тот же скелет и двигаются вместе с телом
+func set_wear(wear: Dictionary) -> void:
+	if skel == null:
+		return
+	for sl in wear_nodes.keys():
+		if not wear.has(sl) or wear[sl] != wear_ids.get(sl, ""):
+			wear_nodes[sl].queue_free()
+			wear_nodes.erase(sl)
+			wear_ids.erase(sl)
+	for sl in wear:
+		if wear_nodes.has(sl):
+			continue
+		var id: String = wear[sl]
+		if not _wear_cache.has(id):
+			_wear_cache[id] = _build_wear(id)
+		var wm := MeshInstance3D.new()
+		wm.mesh = _wear_cache[id]
+		wm.material_override = mi.material_override if mi != null else _mat
+		skel.add_child(wm)
+		wm.skeleton = NodePath("..")
+		wear_nodes[sl] = wm
+		wear_ids[sl] = id
+
+static func _build_wear(id: String) -> ArrayMesh:
+	var m := Mesher.new()
+	m.skinned = true
+	var col: Color = Items.def(id)["color"]
+	var dk := col.darkened(0.35)
+	var lt := col.lightened(0.15)
+	var metal := Color8(0xB8, 0xB8, 0xB0)
+	var webbing := Color8(0x26, 0x26, 0x24)
+	var at := func(bi: int) -> void:
+		m.bone = bi
+		m.xf = Transform3D(Basis.IDENTITY, _global(bi))
+	match id:
+		# ---------- голова ----------
+		"cap":
+			at.call(B.HEAD)
+			m.ellipsoid(Vector3(0, 0.03, -0.004), Vector3(0.114, 0.128, 0.124), col, 4, 12, 0.0, 0.42)
+			m.ellipsoid(Vector3(0, 0.155, 0), Vector3(0.016, 0.01, 0.016), dk, 2, 6)
+			m.push()
+			m.translate(Vector3(0, 0.055, 0.135))
+			m.rot_x(-8)
+			m.box(Vector3.ZERO, Vector3(0.17, 0.014, 0.11), dk, true)
+			m.pop()
+		"beanie":
+			at.call(B.HEAD)
+			m.ellipsoid(Vector3(0, 0.035, -0.006), Vector3(0.118, 0.138, 0.128), col, 5, 12, 0.0, 0.46)
+			m.tube(0.015, 0.05, 0.12, 0.118, dk, 12, 1.0, 1.08, false)
+			m.ellipsoid(Vector3(0, 0.17, -0.01), Vector3(0.035, 0.03, 0.035), lt, 3, 8)
+		"helmet":
+			at.call(B.HEAD)
+			m.ellipsoid(Vector3(0, 0.0, -0.005), Vector3(0.152, 0.165, 0.158), col, 6, 14, 0.0, 0.64)
+			m.push()
+			m.translate(Vector3(0, 0.0, 0.118))
+			m.box(Vector3.ZERO, Vector3(0.2, 0.085, 0.05), Color8(0x1A, 0x22, 0x2C), true)
+			m.pop()
+			m.box(Vector3(0, 0.1, 0.05), Vector3(0.04, 0.05, 0.2), Color8(0xC0, 0x30, 0x30))
+		# ---------- тело ----------
+		"hoodie", "leather", "mil_jacket":
+			at.call(B.SPINE)
+			m.tube(0.04, 0.49, 0.165, 0.2, col, 12, 1.12, 0.76, false)
+			m.ellipsoid(Vector3(0, 0.48, 0), Vector3(0.225, 0.07, 0.15), col, 4, 12)
+			m.tube(0.02, 0.07, 0.17, 0.168, dk, 12, 1.12, 0.76, false)
+			m.box(Vector3(0, 0.27, 0.148), Vector3(0.012, 0.4, 0.012), metal if id == "leather" else dk)
+			if id == "hoodie":
+				m.ellipsoid(Vector3(0, 0.53, -0.1), Vector3(0.13, 0.08, 0.075), col, 4, 10)
+				m.box(Vector3(0, 0.15, 0.142), Vector3(0.2, 0.1, 0.02), dk)
+				m.box(Vector3(-0.03, 0.42, 0.15), Vector3(0.008, 0.1, 0.008), lt)
+				m.box(Vector3(0.03, 0.42, 0.15), Vector3(0.008, 0.1, 0.008), lt)
+			elif id == "leather":
+				m.tube(0.47, 0.56, 0.085, 0.075, col, 10)
+				for sx in [-1.0, 1.0]:
+					m.push()
+					m.translate(Vector3(sx * 0.06, 0.45, 0.13))
+					m.rot_z(sx * 25.0)
+					m.box(Vector3.ZERO, Vector3(0.07, 0.1, 0.02), dk)
+					m.pop()
+					m.box(Vector3(sx * 0.1, 0.13, 0.142), Vector3(0.07, 0.012, 0.02), dk)
+			else:
+				m.tube(0.47, 0.55, 0.08, 0.075, col, 10)
+				for sx in [-1.0, 1.0]:
+					m.box(Vector3(sx * 0.09, 0.36, 0.145), Vector3(0.09, 0.09, 0.025), dk)
+					m.box(Vector3(sx * 0.09, 0.405, 0.15), Vector3(0.095, 0.02, 0.03), dk.darkened(0.2))
+					m.box(Vector3(sx * 0.1, 0.14, 0.14), Vector3(0.1, 0.1, 0.025), dk)
+				m.box(Vector3(-0.2, 0.42, 0.0), Vector3(0.012, 0.06, 0.06), Color8(0x30, 0x34, 0x24))
+			for s in [B.UARM_L, B.UARM_R]:
+				at.call(s)
+				m.ellipsoid(Vector3.ZERO, Vector3(0.074, 0.072, 0.074), col, 4, 8)
+				m.tube(-0.29, 0, 0.05, 0.064, col)
+				at.call(s + 1)
+				m.ellipsoid(Vector3.ZERO, Vector3(0.054, 0.052, 0.054), col, 3, 8)
+				m.tube(-0.2, 0, 0.046, 0.053, col)
+				m.tube(-0.235, -0.195, 0.044, 0.047, dk)
+		# ---------- ноги ----------
+		"jeans", "cargo":
+			at.call(B.SPINE)
+			m.ellipsoid(Vector3(0, 0.05, 0), Vector3(0.172, 0.117, 0.117), col, 5, 10, 0.25, 1.0)
+			m.tube(0.05, 0.11, 0.163, 0.163, Color8(0x2A, 0x22, 0x1C), 10, 1.1, 0.74, false)
+			m.box(Vector3(0, 0.08, 0.125), Vector3(0.05, 0.035, 0.012), metal)
+			for s in [B.THIGH_L, B.THIGH_R]:
+				var out := 1.0 if s == B.THIGH_L else -1.0
+				at.call(s)
+				m.tube(-0.45, 0, 0.062, 0.084, col)
+				m.ellipsoid(Vector3.ZERO, Vector3(0.086, 0.066, 0.086), col, 4, 8)
+				if id == "cargo":
+					m.box(Vector3(out * 0.072, -0.24, 0.0), Vector3(0.03, 0.12, 0.1), dk)
+					m.box(Vector3(out * 0.08, -0.18, 0.0), Vector3(0.03, 0.02, 0.105), dk.darkened(0.2))
+				else:
+					m.box(Vector3(out * 0.04, -0.05, -0.07), Vector3(0.06, 0.07, 0.012), dk)
+				at.call(s + 1)
+				m.ellipsoid(Vector3.ZERO, Vector3(0.064, 0.062, 0.064), col, 4, 8)
+				m.tube(-0.38, 0, 0.054, 0.064, col)
+				m.tube(-0.4, -0.37, 0.058, 0.056, dk)
+		"boots":
+			for s in [B.THIGH_L, B.THIGH_R]:
+				at.call(s + 1)
+				m.tube(-0.43, -0.28, 0.062, 0.066, col)
+				m.tube(-0.3, -0.27, 0.068, 0.068, dk)
+				at.call(s + 2)
+				m.ellipsoid(Vector3(0, -0.03, 0.055), Vector3(0.066, 0.055, 0.13), col, 4, 8)
+				m.box(Vector3(0, -0.075, 0.055), Vector3(0.12, 0.025, 0.25), Color8(0x1A, 0x16, 0x12), true)
+				m.box(Vector3(0, 0.0, 0.11), Vector3(0.05, 0.01, 0.06), lt)
+		"gloves":
+			for s in [B.UARM_L, B.UARM_R]:
+				at.call(s + 1)
+				m.tube(-0.26, -0.19, 0.05, 0.046, dk)
+				at.call(s + 2)
+				m.ellipsoid(Vector3(0, -0.045, 0.006), Vector3(0.044, 0.061, 0.036), col, 4, 8)
+		# ---------- рюкзаки: каркас, клапан, карманы, лямки через плечи ----------
+		"bp_school":
+			at.call(B.SPINE)
+			_pack_straps(m, dk, metal, 0.05, false)
+			m.push()
+			m.translate(Vector3(0, 0, -0.2))
+			m.tube(0.17, 0.43, 0.145, 0.14, col, 12, 1.0, 0.5)
+			m.ellipsoid(Vector3(0, 0.43, 0), Vector3(0.14, 0.05, 0.07), col, 4, 12, 0.0, 0.5)
+			m.ellipsoid(Vector3(0, 0.17, 0), Vector3(0.145, 0.03, 0.072), dk, 3, 12, 0.5, 1.0)
+			# передний карман и молния
+			m.tube(0.19, 0.31, 0.105, 0.1, Color8(0x55, 0x5A, 0x60), 10, 1.0, 0.32)
+			m.translate(Vector3(0, 0, -0.035))
+			m.box(Vector3(0, 0.31, 0.0), Vector3(0.17, 0.008, 0.012), metal)
+			m.box(Vector3(0.06, 0.3, -0.005), Vector3(0.015, 0.03, 0.01), metal)
+			# брелок
+			m.box(Vector3(-0.07, 0.26, -0.012), Vector3(0.03, 0.04, 0.012), Color8(0xF0, 0xC8, 0x30))
+			m.pop()
+			m.box(Vector3(0, 0.46, -0.2), Vector3(0.05, 0.03, 0.01), dk)
+		"bp_military":
+			at.call(B.SPINE)
+			_pack_straps(m, webbing, Color8(0x30, 0x30, 0x2C), 0.065, true)
+			m.box(Vector3(0, 0.3, -0.22), Vector3(0.32, 0.36, 0.17), col, true)
+			# клапан сверху
+			m.box(Vector3(0, 0.47, -0.225), Vector3(0.33, 0.04, 0.185), dk)
+			m.box(Vector3(0, 0.4, -0.315), Vector3(0.24, 0.12, 0.012), dk)
+			for sx in [-0.07, 0.07]:
+				m.box(Vector3(sx, 0.34, -0.322), Vector3(0.03, 0.05, 0.008), webbing)
+			# стропы MOLLE
+			for k in 4:
+				m.box(Vector3(0, 0.12 + k * 0.05, -0.31), Vector3(0.3, 0.012, 0.01), webbing)
+			# боковые подсумки
+			for sx in [-1.0, 1.0]:
+				m.box(Vector3(sx * 0.19, 0.24, -0.22), Vector3(0.07, 0.17, 0.13), dk, true)
+				m.box(Vector3(sx * 0.19, 0.33, -0.22), Vector3(0.075, 0.025, 0.135), col)
+		"bp_hiking":
+			at.call(B.SPINE)
+			_pack_straps(m, dk, Color8(0xE0, 0x9A, 0x20), 0.07, true)
+			# поясной ремень
+			m.tube(0.07, 0.12, 0.172, 0.172, dk, 12, 1.12, 0.76, false)
+			m.box(Vector3(0, 0.095, 0.135), Vector3(0.05, 0.04, 0.02), Color8(0xE0, 0x9A, 0x20))
+			m.push()
+			m.translate(Vector3(0, 0, -0.23))
+			m.tube(0.06, 0.6, 0.155, 0.15, col, 12, 1.0, 0.62)
+			m.ellipsoid(Vector3(0, 0.06, 0), Vector3(0.155, 0.04, 0.096), dk, 3, 12, 0.5, 1.0)
+			# верхний клапан, свисающий назад
+			m.ellipsoid(Vector3(0, 0.61, -0.015), Vector3(0.16, 0.055, 0.11), dk, 4, 12)
+			m.box(Vector3(0, 0.6, -0.12), Vector3(0.05, 0.02, 0.02), metal)
+			# передний карман
+			m.push()
+			m.translate(Vector3(0, 0, -0.08))
+			m.tube(0.12, 0.36, 0.11, 0.1, col.darkened(0.15), 10, 1.0, 0.3)
+			m.pop()
+			# стяжки
+			for yy in [0.24, 0.44]:
+				m.box(Vector3(0, yy, -0.003), Vector3(0.315, 0.018, 0.2), webbing)
+				m.box(Vector3(0, yy, -0.1), Vector3(0.035, 0.03, 0.012), Color8(0xE0, 0x9A, 0x20))
+			# боковые карманы с бутылкой
+			m.tube(0.08, 0.25, 0.045, 0.045, dk, 8, 1.0, 1.0)
+			m.push()
+			m.translate(Vector3(0.155, 0, 0))
+			m.tube(0.1, 0.26, 0.04, 0.042, dk, 8)
+			m.tube(0.26, 0.33, 0.03, 0.02, Color8(0x9C, 0xD4, 0xF4), 8)
+			m.pop()
+			m.push()
+			m.translate(Vector3(-0.155, 0, 0))
+			m.tube(0.1, 0.26, 0.04, 0.042, dk, 8)
+			m.pop()
+			# скатка-коврик под клапаном
+			m.push()
+			m.translate(Vector3(0, 0.7, 0.0))
+			m.rot_z(90)
+			m.tube(-0.2, 0.2, 0.055, 0.055, Color8(0x3E, 0x8A, 0x4A), 10)
+			m.box(Vector3(0, 0.12, 0), Vector3(0.12, 0.012, 0.12), webbing)
+			m.box(Vector3(0, -0.12, 0), Vector3(0.12, 0.012, 0.12), webbing)
+			m.pop()
+			m.pop()
+	return m.commit()
+
+## Лямки: через плечи вниз по груди, грудная стяжка с пряжкой
+static func _pack_straps(m: Mesher, col: Color, buckle: Color, wdt: float, chest: bool) -> void:
+	for sx in [-1.0, 1.0]:
+		var x: float = sx * 0.095
+		m.box(Vector3(x, 0.5, -0.07), Vector3(wdt, 0.03, 0.18), col)
+		m.push()
+		m.translate(Vector3(x, 0.47, 0.06))
+		m.rot_x(-35)
+		m.box(Vector3.ZERO, Vector3(wdt, 0.08, 0.025), col)
+		m.pop()
+		m.push()
+		m.translate(Vector3(x * 1.05, 0.31, 0.142))
+		m.rot_x(5)
+		m.box(Vector3.ZERO, Vector3(wdt, 0.28, 0.018), col)
+		m.pop()
+		m.box(Vector3(x * 1.05, 0.2, 0.15), Vector3(wdt * 0.8, 0.03, 0.012), buckle)
+	if chest:
+		m.box(Vector3(0, 0.36, 0.153), Vector3(0.21, 0.018, 0.01), col)
+		m.box(Vector3(0, 0.36, 0.158), Vector3(0.045, 0.03, 0.01), buckle)

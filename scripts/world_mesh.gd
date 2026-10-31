@@ -235,7 +235,7 @@ func _walls(m: Mesher, x: int, y: int, t: int) -> void:
 	var r := W.wall_like(w.t(x + 1, y))
 	var u := W.wall_like(w.t(x, y - 1))
 	var d := W.wall_like(w.t(x, y + 1))
-	var horiz := l or r
+	var horiz := w.along_y(x, y)
 	match t:
 		W.WALL:
 			m.aabb(cx - h, 0, cz - h, cx + h, WH, cz + h, col, cap)
@@ -342,15 +342,30 @@ func _pile(m: Mesher, x: int, y: int, list: Array) -> void:
 
 # ================== МЕБЕЛЬ ==================
 func _furniture(m: Mesher, x: int, y: int, t: int) -> void:
+	# спиной к стене, лицом в комнату (если стен несколько — к той, напротив которой свободно)
 	var yaw := 0.0
+	var best := -1
 	for k in 4:
-		if W.is_floor(w.t(x + W.DX4[k], y + W.DY4[k])):
-			yaw = rad_to_deg(atan2(W.DX4[k], W.DY4[k]))
-			break
+		var bt := w.t(x - W.DX4[k], y - W.DY4[k])
+		var front := W.is_floor(w.t(x + W.DX4[k], y + W.DY4[k]))
+		if W.wall_like(bt) or bt == W.WALL:
+			var score := (2 if front else 0) + (1 if bt == W.WALL else 0)
+			if score > best:
+				best = score
+				yaw = rad_to_deg(atan2(W.DX4[k], W.DY4[k]))
+	if best < 0:
+		for k in 4:
+			if W.is_floor(w.t(x + W.DX4[k], y + W.DY4[k])):
+				yaw = rad_to_deg(atan2(W.DX4[k], W.DY4[k]))
+				break
 	var hv := hash2(x, y)
 	m.identity()
 	m.translate(Vector3(x + 0.5, 0.1, y + 0.5))
 	m.rot_y(yaw)
+	if best >= 0:
+		# вплотную к стене: стена стоит по центру своей клетки, без сдвига оставалась щель ~0.45
+		var back: float = {W.FRIDGE: 0.38, W.COUNTER: 0.44, W.WARDROBE: 0.43, W.SHELF: 0.31, W.MEDCAB: 0.40, W.LOCKER: 0.40}.get(t, 0.42)
+		m.translate(Vector3(0, 0, -(1.0 - HALF - 0.5 - 0.01) - (0.5 - back)))
 	var wood := c(0x7A5434)
 	match t:
 		W.FRIDGE:

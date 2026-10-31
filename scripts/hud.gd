@@ -2,7 +2,7 @@ class_name Hud
 extends Control
 ## Интерфейс поверх 3D: мудлы, кнопки, джойстик, панели (вещи, лут, тело, пауза).
 
-enum Pnl { NONE, INV, LOOT, PAUSE, BODY }
+enum Pnl { NONE, INV, LOOT, PAUSE, BODY, GEAR }
 
 var screen: GameScreen
 var font: Font
@@ -39,6 +39,10 @@ var b_barr := [Vector2.ZERO, 32.0]
 var b_inv := [Vector2.ZERO, 24.0]
 var b_body := [Vector2.ZERO, 24.0]
 var b_pause := [Vector2.ZERO, 24.0]
+var b_gear := [Vector2.ZERO, 24.0]
+var gear_slot := ""           # выбранный слот в «Снаряжении»
+var gear_rects: Array = []     # [Rect2, слот]
+var gear_rows: Array = []      # [Rect2, id] вещи, которые можно надеть
 var treat_btns: Array = []   # [Rect2, что]
 var btn_a := Rect2()
 var btn_b := Rect2()
@@ -122,6 +126,9 @@ func open_demo_panel(kind: String) -> void:
 		"inv":
 			panel = Pnl.INV
 			selected = "bandage"
+		"gear":
+			panel = Pnl.GEAR
+			gear_slot = "back"
 		"loot":
 			var me := screen.me()
 			var c := g.find_interact(me)
@@ -153,6 +160,7 @@ func _layout() -> void:
 	b_pause[0] = Vector2(W - 38, 38)
 	b_inv[0] = Vector2(W - 96, 38)
 	b_body[0] = Vector2(W - 154, 38)
+	b_gear[0] = Vector2(W - 212, 38)
 
 func _hit(b: Array, p: Vector2) -> bool:
 	return p.distance_to(b[0]) < b[1] * 1.15
@@ -212,6 +220,10 @@ func _touch(type: int, id: int, p: Vector2) -> void:
 			elif _hit(b_inv, p):
 				panel = Pnl.INV
 				scroll[0] = 0.0
+				_release()
+			elif _hit(b_gear, p):
+				panel = Pnl.GEAR
+				gear_slot = ""
 				_release()
 			elif _hit(b_body, p):
 				panel = Pnl.BODY
@@ -320,6 +332,21 @@ func _panel_tap(g: GameState, me: GameState.Player, p: Vector2) -> void:
 				var j := _row_at(right, scroll[1], p.y, me.inv.size())
 				if j >= 0:
 					screen.act({"a": "put", "c": loot_cell, "id": me.inv[j]["id"]})
+		Pnl.GEAR:
+			for gr in gear_rects:
+				if gr[0].has_point(p):
+					gear_slot = gr[1]
+					return
+			for row in gear_rows:
+				if row[0].has_point(p):
+					screen.act({"a": "wear", "id": row[1]})
+					return
+			if gear_slot != "" and btn_a.has_point(p):
+				if gear_slot == "hand":
+					if me.eq != "":
+						screen.act({"a": "use", "id": me.eq})
+				elif me.wear.has(gear_slot):
+					screen.act({"a": "unwear", "slot": gear_slot})
 		Pnl.BODY:
 			for tb in treat_btns:
 				if tb[0].has_point(p):
@@ -393,6 +420,7 @@ func _draw() -> void:
 		Pnl.LOOT: _draw_loot(g, me)
 		Pnl.PAUSE: _draw_pause()
 		Pnl.BODY: _draw_body(me)
+		Pnl.GEAR: _draw_gear(me)
 	if me.dead:
 		_draw_dead(g, me, vr)
 	if screen.lost:
@@ -443,7 +471,7 @@ func _moodles(g: GameState, me: GameState.Player) -> Array:
 	if me.infection > 420.0: m.append(Moodle.new("fever", 3 if me.infection > 900.0 else 2, "Жар"))
 	if me.body.wound_infected(): m.append(Moodle.new("wound", 2, "Нагноение"))
 	if me.body.any_glass(): m.append(Moodle.new("glass", 2, "Стекло"))
-	if me.weight() > GameState.MAX_WEIGHT: m.append(Moodle.new("weight", 2, "Тяжело"))
+	if me.weight() > me.max_weight(): m.append(Moodle.new("weight", 2, "Тяжело"))
 	if me.stamina < 25.0: m.append(Moodle.new("tired", 2 if me.stamina < 10.0 else 1, "Устал"))
 	for z in g.zombies:
 		if z.chase > 0.0 and z.down <= 0.0 and z.rpos.distance_to(me.rpos) < 6.0:
@@ -532,6 +560,7 @@ func _hud(g: GameState, me: GameState.Player) -> void:
 	var hurt := me.body.any_hurt()
 	_btn(b_body, Color(0.69, 0.13, 0.13, 0.82) if me.bleeding() else (Color(0.54, 0.42, 0.13, 0.7) if hurt else Color(0.19, 0.2, 0.22, 0.6)), "body", "", "", "")
 	_btn(b_pause, Color(0.19, 0.2, 0.22, 0.6), "pause", "", "", "")
+	_btn(b_gear, Color(0.19, 0.2, 0.22, 0.6), "gear", "", "", "")
 
 func _btn(b: Array, col: Color, glyph: String, item: String, badge: String, label: String) -> void:
 	var c: Vector2 = b[0]
@@ -594,7 +623,7 @@ func _item_list(col: Rect2, items: Array, scr_i: int, highlight: String, empty: 
 		_text(Vector2(col.position.x + 38, top + ROW_H / 2 + 5), nm, 14)
 
 func _draw_inv(me: GameState.Player) -> void:
-	_panel_bg("Вещи  —  вес %.1f / %d" % [me.weight(), int(GameState.MAX_WEIGHT)])
+	_panel_bg("Вещи  —  вес %.1f / %d" % [me.weight(), int(me.max_weight())])
 	var col := _col_rect(0, 1)
 	scroll[0] = minf(scroll[0], maxf(0.0, me.inv.size() * ROW_H - col.size.y))
 	_item_list(col, me.inv, 0, selected, "Пусто")
@@ -623,6 +652,7 @@ func _draw_inv(me: GameState.Player) -> void:
 		Items.Kind.GUN: info = "Урон %d, громко! Нужны патроны" % int(d["dmg"])
 		Items.Kind.AMMO: info = "Для пистолета"
 		Items.Kind.MATERIAL: info = "Нужен молоток, чтобы заколотить проём"
+		Items.Kind.WEAR: info = _wear_info(selected)
 	_text(Vector2(rx, ry), info, 13, Color(0.69, 0.69, 0.69))
 	ry += 18
 	_text(Vector2(rx, ry), "Вес %.2f" % d["w"], 13, Color(0.69, 0.69, 0.69))
@@ -633,6 +663,7 @@ func _draw_inv(me: GameState.Player) -> void:
 		Items.Kind.DRINK: use = "Выпить"
 		Items.Kind.MED: use = "Применить"
 		Items.Kind.MELEE, Items.Kind.GUN: use = "Убрать из рук" if me.eq == selected else "Взять в руки"
+		Items.Kind.WEAR: use = "Надеть"
 	if use != "":
 		btn_a = Rect2(rx, ry, bw, 44)
 		_rr(btn_a, 10, Color(0.24, 0.42, 0.24))
@@ -800,3 +831,92 @@ func _draw_dead(g: GameState, me: GameState.Player, vr: Rect2) -> void:
 	dead_btn = Rect2(W / 2 - 110, H * 0.62, 220, 50)
 	_rr(dead_btn, 10, Color(0.31, 0.33, 0.35))
 	_text(dead_btn.get_center() + Vector2(0, 6), "В меню", 16, Color.WHITE, HORIZONTAL_ALIGNMENT_CENTER)
+
+
+# ---------- экран «Снаряжение» ----------
+const GEAR_LAYOUT := {
+	"head": Vector2(0.5, 0.0), "torso": Vector2(0.0, 0.2), "hands": Vector2(0.0, 0.62),
+	"back": Vector2(1.0, 0.36), "legs": Vector2(1.0, 0.72), "feet": Vector2(0.5, 1.0), "hand": Vector2(1.0, 0.0)}
+
+static func _wear_info(id: String) -> String:
+	var d := Items.def(id)
+	var t: String = Items.SLOT_NAMES.get(d["slot"], "")
+	if d["cap"] > 0.0:
+		return "%s · +%d кг к переносимому весу" % [t, int(d["cap"])]
+	return "%s · защита от укусов %d%%" % [t, int(round(d["prot"] * 100.0))]
+
+func _draw_gear(me: GameState.Player) -> void:
+	var cap: float = me.max_weight() - GameState.MAX_WEIGHT
+	_panel_bg("Снаряжение  —  вес %.1f / %d%s" % [me.weight(), int(me.max_weight()), ("  (рюкзак +%d)" % int(cap)) if cap > 0.0 else ""])
+	var top := panel_rect.position.y + 56
+	var bottom := panel_rect.end.y - 14
+	var dollw := minf(panel_rect.size.x * 0.5, 360.0)
+	var doll := Rect2(panel_rect.position.x + 16, top, dollw, bottom - top)
+	# силуэт
+	var cx := doll.get_center().x
+	var sc := doll.size.y / 520.0
+	var hy := doll.get_center().y - 175.0 * sc
+	var sil := Color(0.27, 0.29, 0.31)
+	draw_circle(Vector2(cx, hy + 16 * sc), 26 * sc, sil)
+	_rr(Rect2(cx - 40 * sc, hy + 46 * sc, 80 * sc, 120 * sc), 18 * sc, sil)
+	_rr(Rect2(cx - 62 * sc, hy + 52 * sc, 20 * sc, 110 * sc), 10 * sc, sil)
+	_rr(Rect2(cx + 42 * sc, hy + 52 * sc, 20 * sc, 110 * sc), 10 * sc, sil)
+	_rr(Rect2(cx - 36 * sc, hy + 170 * sc, 32 * sc, 140 * sc), 12 * sc, sil)
+	_rr(Rect2(cx + 4 * sc, hy + 170 * sc, 32 * sc, 140 * sc), 12 * sc, sil)
+	# слоты вокруг
+	gear_rects.clear()
+	var ss := clampf(doll.size.y * 0.15, 50.0, 68.0)
+	for sl in GEAR_LAYOUT:
+		var f: Vector2 = GEAR_LAYOUT[sl]
+		var pos := Vector2(doll.position.x + f.x * (doll.size.x - ss), doll.position.y + f.y * (doll.size.y - ss - 20))
+		var r := Rect2(pos, Vector2(ss, ss))
+		var id: String = me.eq if sl == "hand" else me.wear.get(sl, "")
+		_rr(r, 10, Color(0.24, 0.35, 0.47) if sl == gear_slot else Color(0.16, 0.18, 0.19, 0.95))
+		draw_rect(r.grow(-1), Color(1, 1, 1, 0.18), false, 1.5)
+		if id != "":
+			Icons.item(self, id, r.get_center(), ss * 0.8)
+		else:
+			_text(r.get_center() + Vector2(0, 4), "пусто", 10, Color(0.45, 0.45, 0.45), HORIZONTAL_ALIGNMENT_CENTER)
+		_text(Vector2(r.get_center().x, r.end.y + 13), "В руках" if sl == "hand" else Items.SLOT_NAMES[sl], 11, Color(0.7, 0.7, 0.7), HORIZONTAL_ALIGNMENT_CENTER)
+		gear_rects.append([r, sl])
+	# справа: выбранный слот и что можно надеть
+	var rx := doll.end.x + 20
+	var rw := panel_rect.end.x - rx - 16
+	var ry := top + 4
+	btn_a = Rect2()
+	if gear_slot != "":
+		var gid: String = me.eq if gear_slot == "hand" else me.wear.get(gear_slot, "")
+		if gid != "":
+			_text(Vector2(rx, ry + 12), Items.def(gid)["name"], 16)
+			ry += 32
+			if gear_slot != "hand":
+				_text(Vector2(rx, ry), _wear_info(gid), 12, Color(0.69, 0.69, 0.69))
+				ry += 22
+			btn_a = Rect2(rx, ry, minf(rw, 220.0), 42)
+			_rr(btn_a, 10, Color(0.42, 0.24, 0.24))
+			_text(btn_a.get_center() + Vector2(0, 5), "Убрать из рук" if gear_slot == "hand" else "Снять", 15, Color.WHITE, HORIZONTAL_ALIGNMENT_CENTER)
+			ry += 56
+	# защита по зонам
+	var prot := "Защита:  голова %d%%  ·  тело %d%%  ·  руки %d%%  ·  ноги %d%%" % [
+		int(me.protection(Body.HEAD) * 100), int(me.protection(Body.TORSO) * 100),
+		int(me.protection(Body.L_HAND) * 100), int(me.protection(Body.L_SHIN) * 100)]
+	_text(Vector2(rx, ry + 10), prot, 11, Color(0.6, 0.6, 0.6))
+	ry += 28
+	gear_rows.clear()
+	var can := []
+	for st in me.inv:
+		var d := Items.def(st["id"])
+		if d["kind"] == Items.Kind.WEAR and (gear_slot == "" or gear_slot == d["slot"]):
+			can.append(st["id"])
+	_text(Vector2(rx, ry + 10), "Можно надеть (нажми):" if can.size() > 0 else "Нечего надеть — ищи в шкафах и машинах", 12, Color(0.75, 0.75, 0.75))
+	ry += 22
+	for id in can:
+		if ry + ROW_H > bottom:
+			break
+		var rr := Rect2(rx, ry, rw, ROW_H - 4)
+		_rr(rr, 8, Color(0.18, 0.2, 0.21))
+		Icons.item(self, id, Vector2(rx + 18, ry + (ROW_H - 4) / 2), 30)
+		_text(Vector2(rx + 40, ry + ROW_H / 2 + 1), Items.def(id)["name"], 14)
+		_text(Vector2(rr.end.x - 8, ry + ROW_H / 2 + 1), Items.SLOT_NAMES[Items.def(id)["slot"]], 11, Color(0.6, 0.6, 0.6), HORIZONTAL_ALIGNMENT_RIGHT)
+		gear_rows.append([rr, id])
+		ry += ROW_H

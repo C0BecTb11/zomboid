@@ -17,6 +17,17 @@ static func create(kind: String) -> GameState:
 			g.time = 19 * 60.0 + 50.0
 		"climb":
 			_climb(g, p)
+		"gear", "outfit", "outfit2", "outfit3":
+			_victim(g, p, true)
+			g.zombies.clear()
+			p.wear = {"head": "cap", "torso": "leather", "hands": "gloves", "legs": "cargo", "feet": "boots", "back": "bp_hiking"}
+			if kind == "outfit2":
+				p.wear = {"head": "helmet", "torso": "mil_jacket", "legs": "cargo", "feet": "boots", "back": "bp_military"}
+			if kind == "outfit3":
+				p.wear = {"head": "beanie", "torso": "hoodie", "legs": "jeans", "back": "bp_school"}
+			p.face = Vector2(0, 1)
+			for id in ["hoodie", "jeans", "bp_school", "beanie", "helmet"]:
+				Items.add_to(p.inv, id, 1)
 		"stomp", "fall", "stomp_pose":
 			_victim(g, p, kind != "fall")
 	if kind == "zombies" or kind == "night":

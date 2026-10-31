@@ -351,6 +351,27 @@ func _build_house(rnd: RandomNumberGenerator, lot_x: int, lot_y: int, door_top: 
 			set_t(x1 - 1, y0 + 1 if door_top else y1 - 1, COUNTER)
 		_:
 			_house_rooms(rnd, x0, y0, x1, y1, door_top, dx)
+	_fix_openings(x0, y0, x1, y1)
+
+## Окно, в которое упирается внутренняя стена, и окно за мебелью становятся глухой стеной:
+## иначе стена делит окно пополам и торчит наружу, а шкаф стоит вплотную к стеклу
+func _fix_openings(x0: int, y0: int, x1: int, y1: int) -> void:
+	for y in range(y0, y1 + 1):
+		for x in range(x0, x1 + 1):
+			if not is_window_like(t(x, y)):
+				continue
+			var bad := false
+			for d in 4:
+				var nx: int = x + DX4[d]
+				var ny: int = y + DY4[d]
+				if nx <= x0 or nx >= x1 or ny <= y0 or ny >= y1:
+					continue        # соседи по периметру — обычная стена дома
+				var nt := t(nx, ny)
+				if nt == WALL or is_door_like(nt) or is_furniture(nt):
+					bad = true
+			if bad:
+				set_t(x, y, WALL)
+				tile_hp.erase(idx(x, y))
 
 func _house_rooms(rnd: RandomNumberGenerator, x0: int, y0: int, x1: int, y1: int, door_top: bool, door_x: int) -> void:
 	var mid := (x0 + x1) / 2 + (1 if rnd.randi() % 2 == 0 else 0)
@@ -412,8 +433,9 @@ func _place(rnd: RandomNumberGenerator, xa: int, xb: int, y: int, items: Array) 
 			continue
 		var near_door := false
 		for d in 4:
-			if is_door_like(t(x + DX4[d], y + DY4[d])):
-				near_door = true
+			var nt := t(x + DX4[d], y + DY4[d])
+			if is_door_like(nt) or is_window_like(nt):
+				near_door = true        # не у двери и не перед окном
 		if near_door:
 			continue
 		set_t(x, y, items[k])
@@ -507,7 +529,13 @@ func compute_buildings() -> void:
 
 ## Проём в горизонтальной стене (перелезать по оси Y)
 func along_y(x: int, y: int) -> bool:
-	return wall_like(t(x - 1, y)) or wall_like(t(x + 1, y))
+	var l := wall_like(t(x - 1, y))
+	var r := wall_like(t(x + 1, y))
+	if l and r:
+		return true
+	if wall_like(t(x, y - 1)) and wall_like(t(x, y + 1)):
+		return false
+	return l or r
 
 func climb_target(cell: int, px: float, py: float) -> Vector2:
 	var x := cell % w

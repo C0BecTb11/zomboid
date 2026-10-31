@@ -41,6 +41,8 @@ func _ready() -> void:
 	test_stomp()
 	test_attack_sync()
 	test_corpse_facing()
+	test_house_layout()
+	test_wear()
 	print("\nИТОГО: %d прошло, %d ошибок" % [passes, fails])
 	get_tree().quit()
 
@@ -611,3 +613,83 @@ func test_corpse_facing() -> void:
 	g.update(0.016)
 	var c: Array = g.corpses[g.corpses.size() - 1]
 	check("Труп лежит в ту же сторону, куда смотрел зомби, и знает, чей он", c.size() == 5 and absf(c[3] - atan2(z.face.x, z.face.y)) < 0.02 and int(c[4]) == 77, str(c))
+
+
+## Дома: окно не упирается во внутреннюю стену/мебель, окно повернуто вдоль стены дома
+func test_house_layout() -> void:
+	var bad_win := 0
+	var bad_dir := 0
+	var furn_win := 0
+	for sd in [777, 12345, 4242, 99]:
+		var g := GameState.new_game(sd)
+		var w := g.world
+		for b in w.buildings:
+			var x0: int = b[0]
+			var y0: int = b[1]
+			var x1: int = b[2]
+			var y1: int = b[3]
+			for y in range(y0, y1 + 1):
+				for x in range(x0, x1 + 1):
+					var tt := w.t(x, y)
+					if W.is_window_like(tt):
+						var top_bottom := (y == y0 or y == y1) and x > x0 and x < x1
+						var sides := (x == x0 or x == x1) and y > y0 and y < y1
+						if (top_bottom and not w.along_y(x, y)) or (sides and w.along_y(x, y)):
+							bad_dir += 1
+						var inn := Vector2i(x, y + 1) if y == y0 else (Vector2i(x, y - 1) if y == y1 else (Vector2i(x + 1, y) if x == x0 else Vector2i(x - 1, y)))
+						var it := w.t(inn.x, inn.y)
+						if it == W.WALL or W.is_door_like(it):
+							bad_win += 1
+						if W.is_furniture(it):
+							furn_win += 1
+	check("Дома: внутренняя стена не делит окно и не торчит наружу", bad_win == 0 and bad_dir == 0, "окон в стену: %d, повернуто поперёк: %d" % [bad_win, bad_dir])
+	check("Дома: мебель не стоит вплотную к окну", furn_win == 0, "%d окон за мебелью" % furn_win)
+
+
+## Одежда: надеть/снять без потерь и дублей, рюкзак добавляет вес, сохранение, защита
+func test_wear() -> void:
+	var g := _game()
+	var p: GameState.Player = g.players[0]
+	p.inv = [{"id": "bp_hiking", "n": 1}, {"id": "bp_school", "n": 1}, {"id": "leather", "n": 1}]
+	p.wear = {}
+	var base := p.max_weight()
+	g.actions.append([0, {"a": "wear", "id": "bp_hiking"}])
+	for i in 120:
+		g.update(0.016)
+	var cap1 := p.max_weight() - base
+	g.actions.append([0, {"a": "wear", "id": "bp_school"}])
+	for i in 120:
+		g.update(0.016)
+	var swapped: bool = p.wear.get("back", "") == "bp_school" and p.count("bp_hiking") == 1 and p.count("bp_school") == 0
+	g.actions.append([0, {"a": "wear", "id": "pistol"}])      # не одежда
+	g.actions.append([0, {"a": "wear", "id": "helmet"}])      # нет в инвентаре
+	g.actions.append([0, {"a": "unwear", "slot": "nonsense"}])
+	for i in 120:
+		g.update(0.016)
+	check("Одежда: рюкзак надевается, +вес, смена рюкзака возвращает прежний", cap1 >= 12.0 and swapped and not p.wear.has("head") and not p.wear.has("hand"),
+		"+%.0f кг, слоты %s, инв %s" % [cap1, p.wear, p.inv])
+	g.actions.append([0, {"a": "wear", "id": "leather"}])
+	for i in 120:
+		g.update(0.016)
+	var d = JSON.parse_string(JSON.stringify(g.to_data()))
+	var g2 := GameState.new(g.seed)
+	g2.load_data(d)
+	check("Одежда сохраняется и загружается", g2.players[0].wear == p.wear, "%s → %s" % [p.wear, g2.players[0].wear])
+	g.actions.append([0, {"a": "unwear", "slot": "back"}])
+	for i in 120:
+		g.update(0.016)
+	var total := p.count("bp_hiking") + p.count("bp_school") + (1 if p.wear.has("back") else 0)
+	check("Одежда: снять — вещь возвращается в инвентарь, ничего не теряется и не множится", not p.wear.has("back") and total == 2, "рюкзаков %d" % total)
+	# защита: в кожанке укусов в руки/торс заметно меньше
+	var bites := [0, 0]
+	for k in 2:
+		var q := g.join_player("w%d" % k, "t")
+		q.wear = {"torso": "leather"} if k == 1 else {}
+		for n in 3000:
+			var z := GameState.Zombie.new(50000 + n)
+			q.body = Body.new()
+			g._attack_player(z, q)
+			for part in [Body.TORSO, Body.L_FORE, Body.R_FORE]:
+				if not q.body.parts[part].wounds.is_empty():
+					bites[k] += 1
+	check("Одежда защищает: в кожаной куртке меньше ран на торсе и руках", bites[1] < bites[0] * 0.8, "без куртки %d, в куртке %d" % [bites[0], bites[1]])

@@ -54,6 +54,7 @@ var blood_dirty := false
 var flashes: Array = []       # [x, z, life]
 
 var cam_yaw := 35.0
+var cam_d := 15.5            # расстояние камеры (для демо-снимков крупным планом)
 var cam_x := NAN
 var cam_z := 0.0
 var shake := 0.0
@@ -467,7 +468,7 @@ func _place_scene(g: GameState, me: GameState.Player, dt: float) -> void:
 	# ---------- камера ----------
 	var pitch := deg_to_rad(54.0)
 	var yaw := deg_to_rad(cam_yaw)
-	var D := 15.5
+	var D := cam_d
 	var sh := shake * shake * 0.25
 	var t := Vector3(cam_x + (randf() - 0.5) * sh, 0.6, cam_z + (randf() - 0.5) * sh)
 	var eye := t + Vector3(sin(yaw) * cos(pitch) * D, sin(pitch) * D, cos(yaw) * cos(pitch) * D)
@@ -545,7 +546,8 @@ func _place_scene(g: GameState, me: GameState.Player, dt: float) -> void:
 		flash_light.position = Vector3(flashes[0][0], 1.3, flashes[0][1])
 	# ---------- крыши ----------
 	for bi in roof_nodes.size():
-		roof_nodes[bi].visible = bi != inside_building
+		# крыша над игроком не видна, но тень от неё остаётся — в доме тень, как под настоящей крышей
+		roof_nodes[bi].cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_SHADOWS_ONLY if bi == inside_building else GeometryInstance3D.SHADOW_CASTING_SETTING_ON
 	# ---------- игроки ----------
 	var alive := {}
 	for p: GameState.Player in g.players:
@@ -562,6 +564,7 @@ func _place_scene(g: GameState, me: GameState.Player, dt: float) -> void:
 		cm.position = Vector3(p.rpos.x, _ground_at(p.rpos.x, p.rpos.y), p.rpos.y)
 		cm.rotation.y = atan2(p.rface.x, p.rface.y)
 		cm.atk_kind = p.atk_kind
+		cm.set_wear(p.wear)
 		cm.pose(st[0], st[3] if st.size() > 3 else 0.0, p.attack_anim, p.weapon_id(), false, p.sneaking, false, p.rclimb)
 	for id in players.keys():
 		if not alive.has(id):

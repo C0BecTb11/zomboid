@@ -43,6 +43,7 @@ class Player:
 	var atk_kind := 0          # 0 — оружие/кулак, 1 — добивание ногой
 	var stomp_t := -1.0        # до удара стопой о землю
 	var stomp_z := -1
+	var wear := {}             # слот → id надетой вещи (в inv её нет)
 	var snaps: Array = []      # снимки [время, x, y, fx, fy, climb] для плавной отрисовки чужого игрока
 	var rface := Vector2(1, 0)
 	var rclimb := -1.0
@@ -50,7 +51,22 @@ class Player:
 		id = pid
 	func weapon() -> Dictionary: return Items.def(eq if eq != "" else "fists")
 	func weapon_id() -> String: return eq if eq != "" else "fists"
-	func weight() -> float: return Items.weight(inv)
+	## Надетое весит втрое меньше (как в PZ): одежда на теле не тянет руки
+	func weight() -> float:
+		var w := Items.weight(inv)
+		for sl in wear:
+			w += Items.def(wear[sl])["w"] * 0.3
+		return w
+	## Сколько можно нести без замедления: рюкзак добавляет
+	func max_weight() -> float:
+		return MAX_WEIGHT + (Items.def(wear["back"])["cap"] if wear.has("back") else 0.0)
+	## Насколько закрыта часть тела (0..1): лучшая из надетых вещей
+	func protection(part: int) -> float:
+		var best := 0.0
+		for sl in wear:
+			if part in Items.SLOT_PARTS.get(sl, []):
+				best = maxf(best, Items.def(wear[sl])["prot"])
+		return best
 	func count(item: String) -> int: return Items.count(inv, item)
 	func take(item: String, n: int = 1) -> bool:
 		var ok := Items.take(inv, item, n)
@@ -139,6 +155,7 @@ static func new_game(s: int) -> GameState:
 	p.pos = start
 	p.rpos = start
 	p.inv = [{"id": "water", "n": 1}, {"id": "chips", "n": 1}, {"id": "bandage", "n": 1}]
+	p.wear = {"legs": "jeans"}
 	g.players.append(p)
 	g.spawn_zombies(65, start)
 	g.world.compute_buildings()
@@ -232,6 +249,7 @@ func _spawn_friend(pid: int) -> Player:
 		p.pos = host.pos if host else Vector2(50, 50)
 	p.rpos = p.pos
 	p.inv = [{"id": "water", "n": 1}, {"id": "bandage", "n": 1}]
+	p.wear = {"legs": "jeans"}
 	players.append(p)
 	return p
 
@@ -251,6 +269,7 @@ func revive_host() -> bool:
 	p.pos = unstick(near + Vector2(-0.6, 0), PLAYER_R)
 	p.rpos = p.pos
 	p.inv = [{"id": "water", "n": 1}, {"id": "bandage", "n": 1}]
+	p.wear = {"legs": "jeans"}
 	players.insert(0, p)
 	return true
 
@@ -395,7 +414,7 @@ func _cell_at(p: Vector2) -> int:
 	return world.idx(clampi(floori(p.x), 0, world.w - 1), clampi(floori(p.y), 0, world.h - 1))
 
 func move_speed(p: Player, mag: float) -> Array:
-	var heavy := p.weight() > MAX_WEIGHT
+	var heavy := p.weight() > p.max_weight()
 	var running := p.run and p.stamina > 1.0 and mag > 0.1
 	p.sneaking = not running and mag >= 0.1 and mag <= 0.6
 	var speed := 1.25 if p.sneaking else 2.3
@@ -788,6 +807,12 @@ func _attack_player(z: Zombie, p: Player) -> void:
 	add_fx(3, p.pos.x, p.pos.y, p.id)
 	var pname: String = Body.NAMES[part].to_lower()
 	var r := rnd.randf()
+	# одежда: укус или царапина не прошли сквозь ткань — только ушиб
+	if r >= 0.45 and rnd.randf() < p.protection(part):
+		p.hp -= 3.0
+		p.body.parts[part].bruise = 120.0
+		msg(p.id, "Одежда спасла: " + pname)
+		return
 	if r < 0.45:
 		p.hp -= 3.0 + rnd.randf() * 4.0
 		p.body.parts[part].bruise = 120.0
@@ -842,6 +867,10 @@ func _timing(p: Player, a: Dictionary) -> Array:
 				return [0.9, "Обыск"]
 		"barr":
 			return [2.6, "Заколачиваю"]
+		"wear":
+			return [1.2 if Items.def(a["id"])["slot"] in ["torso", "legs", "back"] else 0.6, "Надеваю"]
+		"unwear":
+			return [0.8, "Снимаю"]
 		"treat":
 			match a["w"]:
 				"bandage", "rag": return [2.2, "Перевязка"]
@@ -863,8 +892,10 @@ static func valid_action(a) -> bool:
 			return true
 		"interact", "barr":
 			return a.get("c") is int or a.get("c") is float
-		"use", "drop":
+		"use", "drop", "wear":
 			return a.get("id") is String and Items.DEFS.has(a["id"])
+		"unwear":
+			return a.get("slot") in Items.SLOTS
 		"take", "put":
 			return (a.get("c") is int or a.get("c") is float) and a.get("id") is String and Items.DEFS.has(a["id"])
 		"treat":
@@ -898,6 +929,8 @@ func _perform(p: Player, a: Dictionary) -> void:
 		"interact": _interact(p, a["c"])
 		"barr": _barricade(p, a["c"])
 		"use": _use(p, a["id"])
+		"wear": _wear(p, a["id"])
+		"unwear": _unwear(p, a["slot"])
 		"treat": treat(p, a["part"], a["w"])
 		"drop":
 			var n := p.count(a["id"])
@@ -922,7 +955,7 @@ func _perform(p: Player, a: Dictionary) -> void:
 			Items.add_to(p.inv, a["id"], n)
 			world.dirty_cont[c] = true
 			world.vis_dirty[c] = true
-			if p.weight() > MAX_WEIGHT:
+			if p.weight() > p.max_weight():
 				msg(p.id, "Слишком тяжело — ты замедлился")
 		"put":
 			var c2: int = a["c"]
@@ -1101,7 +1134,7 @@ func _interact(p: Player, cell: int) -> void:
 		world.set_idx(cell, GameWorld.WINDOW_BROKEN)
 		world.tile_hp.erase(cell)
 		noise(p.pos, 12.0, p)
-		if p.eq == "" and rnd.randf() < 0.5:
+		if p.eq == "" and not p.wear.has("hands") and rnd.randf() < 0.5:
 			wound(p, Body.R_HAND if rnd.randi() % 2 == 0 else Body.R_FORE, Body.GLASS)
 			msg(p.id, "Разбил окно рукой — в ране стекло")
 		else:
@@ -1143,6 +1176,28 @@ func _need_bandage(bp: Body.Part) -> int:
 	if not bp.wounds.is_empty() and bp.bandage == 0: return 2
 	if bp.dirty() and not bp.wounds.is_empty(): return 1
 	return 0
+
+## Надеть: вещь уходит из рук в слот, прежняя вещь этого слота — обратно в инвентарь
+func _wear(p: Player, id: String) -> void:
+	var d := Items.def(id)
+	if d["kind"] != Items.Kind.WEAR or p.count(id) <= 0:
+		return
+	var sl: String = d["slot"]
+	if not p.take(id):
+		return
+	if p.wear.has(sl):
+		Items.add_to(p.inv, p.wear[sl], 1)
+	p.wear[sl] = id
+	msg(p.id, "Надето: " + d["name"].to_lower())
+
+func _unwear(p: Player, sl: String) -> void:
+	if not p.wear.has(sl):
+		return
+	var id: String = p.wear[sl]
+	p.wear.erase(sl)
+	Items.add_to(p.inv, id, 1)
+	if sl == "back" and p.weight() > p.max_weight():
+		msg(p.id, "Без рюкзака тяжело — ты замедлился")
 
 func _use(p: Player, id: String) -> void:
 	var d := Items.def(id)
@@ -1192,6 +1247,8 @@ func _use(p: Player, id: String) -> void:
 					msg(p.id, "Стало легче")
 		Items.Kind.MELEE, Items.Kind.GUN:
 			p.eq = "" if p.eq == id else id
+		Items.Kind.WEAR:
+			_wear(p, id)
 
 func treat(p: Player, part: int, what: String) -> void:
 	if part < 0 or part >= Body.COUNT:
@@ -1302,7 +1359,7 @@ func player_data(p: Player) -> Dictionary:
 		"body": p.body.to_data(), "inf": snappedf(p.infection, 0.01), "dead": p.dead, "k": p.kills, "eq": p.eq,
 		"inv": Items.copy(p.inv), "aa": snappedf(p.attack_anim, 0.01), "con": p.connected, "sn": p.sneaking,
 		"cl": snappedf(p.climb, 0.01), "tn": p.ta_name if p.ta_act != null else "", "tp": snappedf(p.ta_progress(), 0.01),
-		"nm": p.name, "fs": p.force_seq,
+		"nm": p.name, "fs": p.force_seq, "wr": p.wear.duplicate(),
 		"cfx": snappedf(p.cl_from.x, 0.01), "cfy": snappedf(p.cl_from.y, 0.01), "ctx": snappedf(p.cl_to.x, 0.01), "cty": snappedf(p.cl_to.y, 0.01)}
 
 func player_from(o: Dictionary, p: Player) -> void:
@@ -1327,6 +1384,13 @@ func player_from(o: Dictionary, p: Player) -> void:
 	p.cl_from = Vector2(float(o.get("cfx", p.pos.x)), float(o.get("cfy", p.pos.y)))
 	p.cl_to = Vector2(float(o.get("ctx", p.pos.x)), float(o.get("cty", p.pos.y)))
 	p.name = o.get("nm", "")
+	p.wear = {}
+	var wr = o.get("wr", {})
+	if wr is Dictionary:
+		for sl in wr:
+			var wid := str(wr[sl])
+			if sl in Items.SLOTS and Items.DEFS.has(wid) and Items.def(wid)["slot"] == sl:
+				p.wear[sl] = wid
 	p.force_seq = int(o.get("fs", 0))
 	var tn: String = o.get("tn", "")
 	if tn != "":
