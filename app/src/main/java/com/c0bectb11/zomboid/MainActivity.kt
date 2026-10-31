@@ -27,6 +27,13 @@ class MainActivity : Activity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        val demo = intent?.getStringExtra("demo")
+        if (demo != null) {
+            val v = GameView(this, Mode.SOLO, Demo.create(demo), null) { del -> onExit(del) }
+            v.demoPanel = demo
+            gameView = v; setContentView(v)
+            return
+        }
         showMenu()
     }
 

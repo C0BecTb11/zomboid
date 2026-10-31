@@ -96,6 +96,17 @@ class GameView(
 
     private fun g(): Game? = game
 
+    /** Для демо-скриншотов: сразу открыть панель */
+    var demoPanel: String? = null
+        set(v) {
+            field = v
+            when (v) {
+                "body" -> { panel = Panel.BODY; selPart = BP.L_FORE }
+                "inv" -> { panel = Panel.INV; selected = "bandage" }
+                "loot" -> game?.let { gm -> val me = gm.players[0]; val c = gm.findInteract(me); if (c >= 0) { gm.world.openContainer(c, gm.rnd); lootCell = c; panel = Panel.LOOT } }
+            }
+        }
+
     // ================== ЖИЗНЕННЫЙ ЦИКЛ ==================
     override fun surfaceCreated(h: SurfaceHolder) { start() }
     override fun surfaceChanged(h: SurfaceHolder, f: Int, w: Int, hh: Int) { W = w.toFloat(); H = hh.toFloat() }
@@ -116,7 +127,7 @@ class GameView(
 
     fun saveNow() {
         val gm = game ?: return
-        if (mode == Mode.CLIENT || deleteOnExit) return
+        if (mode == Mode.CLIENT || deleteOnExit || demoPanel != null) return
         if (gm.players.isNotEmpty() && gm.players.all { it.dead }) return
         synchronized(gm) { Saves.save(context, gm) }
     }
