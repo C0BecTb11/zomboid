@@ -1,0 +1,132 @@
+e: file:///home/runner/work/zomboid/zomboid/app/src/main/java/com/c0bectb11/zomboid/GameView.kt:92:29 Unresolved reference 'panel'.
+e: file:///home/runner/work/zomboid/zomboid/app/src/main/java/com/c0bectb11/zomboid/GameView.kt:93:28 Unresolved reference 'panel'.
+e: file:///home/runner/work/zomboid/zomboid/app/src/main/java/com/c0bectb11/zomboid/GameView.kt:93:47 Unresolved reference 'selected'.
+e: file:///home/runner/work/zomboid/zomboid/app/src/main/java/com/c0bectb11/zomboid/GameView.kt:94:147 Unresolved reference 'lootCell'.
+e: file:///home/runner/work/zomboid/zomboid/app/src/main/java/com/c0bectb11/zomboid/GameView.kt:94:161 Unresolved reference 'panel'.
+e: file:///home/runner/work/zomboid/zomboid/app/src/main/java/com/c0bectb11/zomboid/GameView.kt:186:47 Unresolved reference 'panel'.
+e: file:///home/runner/work/zomboid/zomboid/app/src/main/java/com/c0bectb11/zomboid/GameView.kt:219:13 Unresolved reference 'panel'.
+e: file:///home/runner/work/zomboid/zomboid/app/src/main/java/com/c0bectb11/zomboid/GameView.kt:219:70 Unresolved reference 'lootCell'.
+e: file:///home/runner/work/zomboid/zomboid/app/src/main/java/com/c0bectb11/zomboid/GameView.kt:219:118 Unresolved reference 'lootCell'.
+e: file:///home/runner/work/zomboid/zomboid/app/src/main/java/com/c0bectb11/zomboid/GameView.kt:220:74 Unresolved reference 'panel'.
+e: file:///home/runner/work/zomboid/zomboid/app/src/main/java/com/c0bectb11/zomboid/GameView.kt:224:13 Unresolved reference 'panel'.
+e: file:///home/runner/work/zomboid/zomboid/app/src/main/java/com/c0bectb11/zomboid/GameView.kt:224:68 Unresolved reference 'lootCell'.
+e: file:///home/runner/work/zomboid/zomboid/app/src/main/java/com/c0bectb11/zomboid/GameView.kt:224:97 Unresolved reference 'panel'.
+e: file:///home/runner/work/zomboid/zomboid/app/src/main/java/com/c0bectb11/zomboid/GameView.kt:329:47 Unresolved reference 'panelPid'.
+e: file:///home/runner/work/zomboid/zomboid/app/src/main/java/com/c0bectb11/zomboid/GameView.kt:339:13 Unresolved reference 'panel'.
+e: file:///home/runner/work/zomboid/zomboid/app/src/main/java/com/c0bectb11/zomboid/GameView.kt:343:43 Unresolved reference 'panel'.
+e: file:///home/runner/work/zomboid/zomboid/app/src/main/java/com/c0bectb11/zomboid/GameView.kt:344:41 Unresolved reference 'panel'.
+e: file:///home/runner/work/zomboid/zomboid/app/src/main/java/com/c0bectb11/zomboid/GameView.kt:344:60 Unresolved reference 'scroll'.
+e: file:///home/runner/work/zomboid/zomboid/app/src/main/java/com/c0bectb11/zomboid/GameView.kt:345:42 Unresolved reference 'panel'.
+e: file:///home/runner/work/zomboid/zomboid/app/src/main/java/com/c0bectb11/zomboid/GameView.kt:354:29 Unresolved reference 'lootCell'.
+e: file:///home/runner/work/zomboid/zomboid/app/src/main/java/com/c0bectb11/zomboid/GameView.kt:354:43 Unresolved reference 'panel'.
+e: file:///home/runner/work/zomboid/zomboid/app/src/main/java/com/c0bectb11/zomboid/GameView.kt:354:63 Unresolved reference 'scroll'.
+e: file:///home/runner/work/zomboid/zomboid/app/src/main/java/com/c0bectb11/zomboid/GameView.kt:354:79 Unresolved reference 'scroll'.
+e: file:///home/runner/work/zomboid/zomboid/app/src/main/java/com/c0bectb11/zomboid/GameView.kt:359:25 Unresolved reference 'lootCell'.
+e: file:///home/runner/work/zomboid/zomboid/app/src/main/java/com/c0bectb11/zomboid/GameView.kt:359:42 Unresolved reference 'panel'.
+e: file:///home/runner/work/zomboid/zomboid/app/src/main/java/com/c0bectb11/zomboid/GameView.kt:359:62 Unresolved reference 'scroll'.
+e: file:///home/runner/work/zomboid/zomboid/app/src/main/java/com/c0bectb11/zomboid/GameView.kt:359:78 Unresolved reference 'scroll'.
+e: file:///home/runner/work/zomboid/zomboid/app/src/main/java/com/c0bectb11/zomboid/GameView.kt:402:24 Unresolved reference 'panelPid'.
+e: file:///home/runner/work/zomboid/zomboid/app/src/main/java/com/c0bectb11/zomboid/GameView.kt:402:40 Unresolved reference 'panelPid'.
+e: file:///home/runner/work/zomboid/zomboid/app/src/main/java/com/c0bectb11/zomboid/GameView.kt:402:58 Unresolved reference 'panelDownX'.
+e: file:///home/runner/work/zomboid/zomboid/app/src/main/java/com/c0bectb11/zomboid/GameView.kt:402:76 Unresolved reference 'panelDownY'.
+e: file:///home/runner/work/zomboid/zomboid/app/src/main/java/com/c0bectb11/zomboid/GameView.kt:402:94 Unresolved reference 'panelLastY'.
+e: file:///home/runner/work/zomboid/zomboid/app/src/main/java/com/c0bectb11/zomboid/GameView.kt:402:112 Unresolved reference 'panelDrag'.
+e: file:///home/runner/work/zomboid/zomboid/app/src/main/java/com/c0bectb11/zomboid/GameView.kt:403:31 Unresolved reference 'panelPid'.
+e: file:///home/runner/work/zomboid/zomboid/app/src/main/java/com/c0bectb11/zomboid/GameView.kt:404:33 Unresolved reference 'panelDownX'.
+e: file:///home/runner/work/zomboid/zomboid/app/src/main/java/com/c0bectb11/zomboid/GameView.kt:404:51 Unresolved reference 'panelDownY'.
+e: file:///home/runner/work/zomboid/zomboid/app/src/main/java/com/c0bectb11/zomboid/GameView.kt:404:74 Unresolved reference 'panelDrag'.
+e: file:///home/runner/work/zomboid/zomboid/app/src/main/java/com/c0bectb11/zomboid/GameView.kt:405:21 Unresolved reference 'panelDrag'.
+e: file:///home/runner/work/zomboid/zomboid/app/src/main/java/com/c0bectb11/zomboid/GameView.kt:406:35 Unresolved reference 'panel'.
+e: file:///home/runner/work/zomboid/zomboid/app/src/main/java/com/c0bectb11/zomboid/GameView.kt:407:21 Unresolved reference 'scroll'.
+e: file:///home/runner/work/zomboid/zomboid/app/src/main/java/com/c0bectb11/zomboid/GameView.kt:407:43 Unresolved reference 'scroll'.
+e: file:///home/runner/work/zomboid/zomboid/app/src/main/java/com/c0bectb11/zomboid/GameView.kt:407:43 Cannot infer type for this parameter. Please specify it explicitly.
+e: file:///home/runner/work/zomboid/zomboid/app/src/main/java/com/c0bectb11/zomboid/GameView.kt:407:64 Unresolved reference 'panelLastY'.
+e: file:///home/runner/work/zomboid/zomboid/app/src/main/java/com/c0bectb11/zomboid/GameView.kt:409:17 Unresolved reference 'panelLastY'.
+e: file:///home/runner/work/zomboid/zomboid/app/src/main/java/com/c0bectb11/zomboid/GameView.kt:411:31 Unresolved reference 'panelPid'.
+e: file:///home/runner/work/zomboid/zomboid/app/src/main/java/com/c0bectb11/zomboid/GameView.kt:412:17 Unresolved reference 'panelPid'.
+e: file:///home/runner/work/zomboid/zomboid/app/src/main/java/com/c0bectb11/zomboid/GameView.kt:413:22 Unresolved reference 'panelDrag'.
+e: file:///home/runner/work/zomboid/zomboid/app/src/main/java/com/c0bectb11/zomboid/GameView.kt:419:40 Unresolved reference 'panel'.
+e: file:///home/runner/work/zomboid/zomboid/app/src/main/java/com/c0bectb11/zomboid/GameView.kt:420:15 Unresolved reference 'panel'.
+e: file:///home/runner/work/zomboid/zomboid/app/src/main/java/com/c0bectb11/zomboid/GameView.kt:422:42 Unresolved reference 'panel'.
+e: file:///home/runner/work/zomboid/zomboid/app/src/main/java/com/c0bectb11/zomboid/GameView.kt:428:40 Unresolved reference 'scroll'.
+e: file:///home/runner/work/zomboid/zomboid/app/src/main/java/com/c0bectb11/zomboid/GameView.kt:428:40 Argument type mismatch: actual type is 'V?', but 'kotlin.Float' was expected.
+e: file:///home/runner/work/zomboid/zomboid/app/src/main/java/com/c0bectb11/zomboid/GameView.kt:428:40 Cannot infer type for this parameter. Please specify it explicitly.
+e: file:///home/runner/work/zomboid/zomboid/app/src/main/java/com/c0bectb11/zomboid/GameView.kt:429:33 Unresolved reference 'selected'.
+e: file:///home/runner/work/zomboid/zomboid/app/src/main/java/com/c0bectb11/zomboid/GameView.kt:431:27 Unresolved reference 'selected'.
+e: file:///home/runner/work/zomboid/zomboid/app/src/main/java/com/c0bectb11/zomboid/GameView.kt:432:45 Argument type mismatch: actual type is 'kotlin.Any', but 'kotlin.String' was expected.
+e: file:///home/runner/work/zomboid/zomboid/app/src/main/java/com/c0bectb11/zomboid/GameView.kt:433:58 Argument type mismatch: actual type is 'kotlin.Any', but 'kotlin.String' was expected.
+e: file:///home/runner/work/zomboid/zomboid/app/src/main/java/com/c0bectb11/zomboid/GameView.kt:434:61 Argument type mismatch: actual type is 'kotlin.Any', but 'kotlin.String' was expected.
+e: file:///home/runner/work/zomboid/zomboid/app/src/main/java/com/c0bectb11/zomboid/GameView.kt:434:68 Unresolved reference 'selected'.
+e: file:///home/runner/work/zomboid/zomboid/app/src/main/java/com/c0bectb11/zomboid/GameView.kt:439:48 Unresolved reference 'lootCell'.
+e: file:///home/runner/work/zomboid/zomboid/app/src/main/java/com/c0bectb11/zomboid/GameView.kt:441:41 Unresolved reference 'scroll'.
+e: file:///home/runner/work/zomboid/zomboid/app/src/main/java/com/c0bectb11/zomboid/GameView.kt:441:41 Argument type mismatch: actual type is 'V?', but 'kotlin.Float' was expected.
+e: file:///home/runner/work/zomboid/zomboid/app/src/main/java/com/c0bectb11/zomboid/GameView.kt:441:41 Cannot infer type for this parameter. Please specify it explicitly.
+e: file:///home/runner/work/zomboid/zomboid/app/src/main/java/com/c0bectb11/zomboid/GameView.kt:442:46 Unresolved reference 'lootCell'.
+e: file:///home/runner/work/zomboid/zomboid/app/src/main/java/com/c0bectb11/zomboid/GameView.kt:444:42 Unresolved reference 'scroll'.
+e: file:///home/runner/work/zomboid/zomboid/app/src/main/java/com/c0bectb11/zomboid/GameView.kt:444:42 Argument type mismatch: actual type is 'V?', but 'kotlin.Float' was expected.
+e: file:///home/runner/work/zomboid/zomboid/app/src/main/java/com/c0bectb11/zomboid/GameView.kt:444:42 Cannot infer type for this parameter. Please specify it explicitly.
+e: file:///home/runner/work/zomboid/zomboid/app/src/main/java/com/c0bectb11/zomboid/GameView.kt:445:45 Unresolved reference 'lootCell'.
+e: file:///home/runner/work/zomboid/zomboid/app/src/main/java/com/c0bectb11/zomboid/GameView.kt:493:15 Unresolved reference 'panel'.
+e: file:///home/runner/work/zomboid/zomboid/app/src/main/java/com/c0bectb11/zomboid/GameView.kt:736:44 Unresolved reference 'scroll'.
+e: file:///home/runner/work/zomboid/zomboid/app/src/main/java/com/c0bectb11/zomboid/GameView.kt:736:44 Cannot infer type for this parameter. Please specify it explicitly.
+e: file:///home/runner/work/zomboid/zomboid/app/src/main/java/com/c0bectb11/zomboid/GameView.kt:737:21 'operator' modifier is required on 'FirNamedFunctionSymbol kotlin/compareTo' in 'compareTo'.
+e: file:///home/runner/work/zomboid/zomboid/app/src/main/java/com/c0bectb11/zomboid/GameView.kt:737:41 Overload resolution ambiguity between candidates:
+fun String?.plus(other: Any?): String
+fun <T> Array<T>.plus(element: T): Array<T>
+fun FloatArray.plus(element: Float): FloatArray
+--
+e: file:///home/runner/work/zomboid/zomboid/app/src/main/java/com/c0bectb11/zomboid/GameView.kt:737:48 'operator' modifier is required on 'FirNamedFunctionSymbol kotlin/compareTo' in 'compareTo'.
+e: file:///home/runner/work/zomboid/zomboid/app/src/main/java/com/c0bectb11/zomboid/GameView.kt:738:36 Overload resolution ambiguity between candidates:
+fun String?.plus(other: Any?): String
+fun <T> Array<T>.plus(element: T): Array<T>
+fun FloatArray.plus(element: Float): FloatArray
+--
+e: file:///home/runner/work/zomboid/zomboid/app/src/main/java/com/c0bectb11/zomboid/GameView.kt:738:61 Overload resolution ambiguity between candidates:
+fun String?.plus(other: Any?): String
+fun <T> Array<T>.plus(element: T): Array<T>
+fun FloatArray.plus(element: Float): FloatArray
+--
+e: file:///home/runner/work/zomboid/zomboid/app/src/main/java/com/c0bectb11/zomboid/GameView.kt:738:68 Overload resolution ambiguity between candidates:
+fun <T> Iterable<T>.minus(element: T): List<T>
+fun <K, V> Map<out K, V>.minus(key: K): Map<K, V>
+fun <T> Set<T>.minus(element: T): Set<T>
+--
+e: file:///home/runner/work/zomboid/zomboid/app/src/main/java/com/c0bectb11/zomboid/GameView.kt:740:57 Overload resolution ambiguity between candidates:
+fun String?.plus(other: Any?): String
+fun <T> Array<T>.plus(element: T): Array<T>
+fun FloatArray.plus(element: Float): FloatArray
+--
+e: file:///home/runner/work/zomboid/zomboid/app/src/main/java/com/c0bectb11/zomboid/GameView.kt:741:94 Overload resolution ambiguity between candidates:
+fun String?.plus(other: Any?): String
+fun <T> Array<T>.plus(element: T): Array<T>
+fun FloatArray.plus(element: Float): FloatArray
+--
+e: file:///home/runner/work/zomboid/zomboid/app/src/main/java/com/c0bectb11/zomboid/GameView.kt:741:105 Overload resolution ambiguity between candidates:
+fun String?.plus(other: Any?): String
+fun <T> Array<T>.plus(element: T): Array<T>
+fun FloatArray.plus(element: Float): FloatArray
+--
+e: file:///home/runner/work/zomboid/zomboid/app/src/main/java/com/c0bectb11/zomboid/GameView.kt:883:69 Unresolved reference 'scroll'.
+e: file:///home/runner/work/zomboid/zomboid/app/src/main/java/com/c0bectb11/zomboid/GameView.kt:883:85 Unresolved reference 'scroll'.
+e: file:///home/runner/work/zomboid/zomboid/app/src/main/java/com/c0bectb11/zomboid/GameView.kt:883:85 Cannot infer type for this parameter. Please specify it explicitly.
+e: file:///home/runner/work/zomboid/zomboid/app/src/main/java/com/c0bectb11/zomboid/GameView.kt:884:37 Unresolved reference 'selected'.
+e: file:///home/runner/work/zomboid/zomboid/app/src/main/java/com/c0bectb11/zomboid/GameView.kt:885:19 Unresolved reference 'selected'.
+e: file:///home/runner/work/zomboid/zomboid/app/src/main/java/com/c0bectb11/zomboid/GameView.kt:885:29 Cannot infer type for this parameter. Please specify it explicitly.
+e: file:///home/runner/work/zomboid/zomboid/app/src/main/java/com/c0bectb11/zomboid/GameView.kt:885:36 Cannot infer type for this parameter. Please specify it explicitly.
+e: file:///home/runner/work/zomboid/zomboid/app/src/main/java/com/c0bectb11/zomboid/GameView.kt:889:27 Argument type mismatch: actual type is 'kotlin.Any', but 'kotlin.String' was expected.
+e: file:///home/runner/work/zomboid/zomboid/app/src/main/java/com/c0bectb11/zomboid/GameView.kt:924:30 Unresolved reference 'lootCell'.
+e: file:///home/runner/work/zomboid/zomboid/app/src/main/java/com/c0bectb11/zomboid/GameView.kt:931:40 Unresolved reference 'lootCell'.
+e: file:///home/runner/work/zomboid/zomboid/app/src/main/java/com/c0bectb11/zomboid/GameView.kt:937:9 Unresolved reference 'scroll'.
+e: file:///home/runner/work/zomboid/zomboid/app/src/main/java/com/c0bectb11/zomboid/GameView.kt:937:25 Unresolved reference 'scroll'.
+e: file:///home/runner/work/zomboid/zomboid/app/src/main/java/com/c0bectb11/zomboid/GameView.kt:937:25 Cannot infer type for this parameter. Please specify it explicitly.
+e: file:///home/runner/work/zomboid/zomboid/app/src/main/java/com/c0bectb11/zomboid/GameView.kt:938:9 Unresolved reference 'scroll'.
+e: file:///home/runner/work/zomboid/zomboid/app/src/main/java/com/c0bectb11/zomboid/GameView.kt:938:25 Unresolved reference 'scroll'.
+e: file:///home/runner/work/zomboid/zomboid/app/src/main/java/com/c0bectb11/zomboid/GameView.kt:938:25 Cannot infer type for this parameter. Please specify it explicitly.
+gradle/actions: Writing build results to /home/runner/work/_temp/.gradle-actions/build-results/__run-1793410022813.json
+
+[Incubating] Problems report is available at: file:///home/runner/work/zomboid/zomboid/build/reports/problems/problems-report.html
+--
+* What went wrong:
+Execution failed for task ':app:compileReleaseKotlin'.
+> A failure occurred while executing org.jetbrains.kotlin.compilerRunner.GradleCompilerRunnerWithWorkers$GradleKotlinCompilerWorkAction
+   > Compilation error. See log for more details
