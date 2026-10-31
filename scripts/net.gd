@@ -176,7 +176,7 @@ func _process(dt: float) -> void:
 			var ip := scan_sock.get_packet_ip()
 			if raw.begins_with(MAGIC + "!"):
 				var info = JSON.parse_string(raw.substr(MAGIC.length() + 1))
-				if info is Dictionary:
+				if info is Dictionary and str(info.get("id", "")) != uid:
 					servers[ip] = {"info": info, "seen": Time.get_ticks_msec()}
 		for ip in servers.keys():
 			if Time.get_ticks_msec() - servers[ip]["seen"] > 6000:
@@ -202,6 +202,19 @@ func _probe() -> void:
 	for t in targets:
 		scan_sock.set_dest_address(t, DISCOVERY_PORT)
 		scan_sock.put_packet(q)
+
+## Список миров без повторов: один мир может ответить с нескольких адресов
+func server_list() -> Array:
+	var by_key := {}
+	for ip in servers:
+		var inf: Dictionary = servers[ip]["info"]
+		var key := str(inf.get("id", ip))
+		if by_key.has(key) and not str(by_key[key]["ip"]).begins_with("127."):
+			continue
+		by_key[key] = {"key": key, "ip": ip, "info": inf}
+	var out := by_key.values()
+	out.sort_custom(func(a, b): return str(a["info"].get("name", "")) < str(b["info"].get("name", "")))
+	return out
 
 static func local_ip() -> String:
 	var best := ""

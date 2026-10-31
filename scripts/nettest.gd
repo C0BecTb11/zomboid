@@ -42,6 +42,9 @@ func _process(dt: float) -> void:
 			get_tree().quit()
 		return
 	# ---------- client ----------
+	if role == "touch":
+		_touch_test(dt, scr)
+		return
 	match step:
 		0:
 			main._show_friends()
@@ -101,4 +104,65 @@ func _process(dt: float) -> void:
 				get_tree().quit()
 	if t > 60.0:
 		L("ОШИБКА: таймаут на шаге %d" % step)
+		get_tree().quit(1)
+
+func _tap(pos: Vector2, idx: int = 0) -> void:
+	var e := InputEventScreenTouch.new()
+	e.index = idx
+	e.position = pos
+	e.pressed = true
+	Input.parse_input_event(e)
+	var r := InputEventScreenTouch.new()
+	r.index = idx
+	r.position = pos
+	r.pressed = false
+	Input.parse_input_event(r)
+
+var _tapped := false
+var tap_pos := Vector2.ZERO
+func _touch_test(dt: float, scr: GameScreen) -> void:
+	match step:
+		0:
+			main._show_friends()
+			step = 1
+		1:
+			if Net.servers.size() > 0 and main.server_box != null:
+				for c in main.server_box.get_children():
+					if c is Button and c.visible and c.is_inside_tree() and c.size.x > 0:
+						var center: Vector2 = c.get_global_rect().get_center()
+						L("нажимаю пальцем на мир: %s в точке %s, disabled=%s" % [c.text, center, c.disabled])
+						c.gui_input.connect(func(ev): L("кнопка получила: %s" % ev))
+						c.pressed.connect(func(): L("кнопка нажата (pressed)"))
+						get_viewport().gui_focus_changed.connect(func(n): L("фокус: %s" % n))
+						center = get_viewport().get_final_transform() * center
+						L("в координатах окна: %s, окно %s" % [center, DisplayServer.window_get_size()])
+						var e := InputEventScreenTouch.new()
+						e.position = center
+						e.pressed = true
+						Input.parse_input_event(e)
+						tap_pos = center
+						step = 10
+						log_t = 0.12
+						break
+			elif t > 10.0:
+				L("ОШИБКА: мир не найден")
+				get_tree().quit(1)
+		10:
+			log_t -= dt
+			if log_t <= 0.0:
+				var r := InputEventScreenTouch.new()
+				r.position = tap_pos
+				r.pressed = false
+				Input.parse_input_event(r)
+				L("отпустил палец")
+				step = 2
+				log_t = 4.0
+		2:
+			log_t -= dt
+			if log_t <= 0.0:
+				var in_game := main.screen != null and main.screen.game != null
+				L("через 4 с: экран игры=%s, мир получен=%s, меню=%s" % [main.screen != null, in_game, main.menu != null])
+				L("ИТОГ: %s" % ("ВОШЁЛ" if in_game else "ВЫКИНУЛО В МЕНЮ"))
+				get_tree().quit()
+	if t > 40.0:
 		get_tree().quit(1)

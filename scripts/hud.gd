@@ -172,10 +172,20 @@ func _input(e: InputEvent) -> void:
 		var d := e as InputEventScreenDrag
 		_touch(1, d.index, d.position)
 
+var _down := {}          # пальцы, нажатые уже на этом экране
+var cancel_btn := Rect2()
+
 func _touch(type: int, id: int, p: Vector2) -> void:
+	# отпускание пальца, нажатого ещё в меню (например, на кнопке сервера), игнорируем
+	if type == 0:
+		_down[id] = true
+	elif not _down.has(id):
+		return
+	if type == 2:
+		_down.erase(id)
 	var g := screen.game
 	if screen.lost or g == null:
-		if type == 2:
+		if type == 2 and (screen.lost or cancel_btn.has_point(p)):
 			screen.request_exit(false)
 		return
 	var me := screen.me()
@@ -360,7 +370,14 @@ func _draw() -> void:
 	var vr := get_viewport_rect()
 	if g == null:
 		draw_rect(vr, Color(0.06, 0.07, 0.08))
-		_text(vr.get_center(), "Соединение потеряно — коснись экрана" if screen.lost else (Net.status if Net.status != "" else "Загрузка…"), 18, Color.WHITE, HORIZONTAL_ALIGNMENT_CENTER)
+		var st := Net.status if Net.status != "" else "Загрузка…"
+		if screen.lost:
+			st = (Net.status if Net.status != "" else "Соединение потеряно") + " — коснись экрана"
+		_text(vr.get_center(), st, 18, Color.WHITE, HORIZONTAL_ALIGNMENT_CENTER)
+		if not screen.lost:
+			cancel_btn = Rect2(vr.get_center() + Vector2(-90, 30), Vector2(180, 46))
+			_rr(cancel_btn, 10, Color(0.31, 0.33, 0.35))
+			_text(cancel_btn.get_center() + Vector2(0, 6), "Отмена", 16, Color.WHITE, HORIZONTAL_ALIGNMENT_CENTER)
 		return
 	var me := screen.me()
 	if me == null:

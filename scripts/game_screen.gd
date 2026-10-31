@@ -73,9 +73,17 @@ func _notification(what: int) -> void:
 	if what == NOTIFICATION_APPLICATION_PAUSED or what == NOTIFICATION_WM_CLOSE_REQUEST or what == NOTIFICATION_APPLICATION_FOCUS_OUT:
 		save_now()
 
+var connect_t := 0.0
+
 func _process(dt: float) -> void:
 	dt = minf(dt, 0.05)
 	_handle_net()
+	if game == null and mode == Mode.CLIENT and not lost:
+		connect_t += dt
+		if connect_t > 12.0:
+			Net.status = "Мир не отвечает. Проверь, что вы в одной Wi‑Fi сети"
+			Net.close()
+			lost = true
 	if game == null:
 		hud.queue_redraw()
 		return
@@ -175,7 +183,7 @@ func _host_send(dt: float) -> void:
 ## Для списка серверов
 func adv_info() -> Dictionary:
 	var me_p := game.player(0) if game != null else null
-	return {"name": Net.nick, "day": game.day() if game != null else 1, "busy": friend_pid >= 0 and Net.connected,
+	return {"id": Net.uid, "name": Net.nick, "day": game.day() if game != null else 1, "busy": friend_pid >= 0 and Net.connected,
 		"alive": me_p != null and not me_p.dead}
 
 func _handle_net() -> void:

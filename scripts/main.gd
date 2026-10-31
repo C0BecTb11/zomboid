@@ -127,7 +127,6 @@ func _show_menu() -> void:
 var server_box: VBoxContainer
 var scan_label: Label
 var nick_edit: LineEdit
-var _shown_servers := ""
 
 func _show_friends() -> void:
 	var col := _menu_base()
@@ -153,7 +152,7 @@ func _show_friends() -> void:
 	col.add_child(server_box)
 	scan_label = _label("Ищу… (друг должен открыть свой мир)", 13, Color(0.5, 0.5, 0.5))
 	server_box.add_child(scan_label)
-	_shown_servers = ""
+	server_btns.clear()
 	# ручной ввод на случай, если поиск не сработал
 	var manual := HBoxContainer.new()
 	manual.add_theme_constant_override("separation", 8)
@@ -184,29 +183,38 @@ func _filter_ip(t: String) -> void:
 		ip_edit.text = out
 		ip_edit.caret_column = mini(pos, out.length())
 
+var server_btns := {}     # ключ мира → кнопка (кнопки не пересоздаются, чтобы не терять нажатие)
+
 func _process_menu() -> void:
 	if server_box == null or not is_instance_valid(server_box) or Net.scan_sock == null:
 		return
-	var keys := Net.servers.keys()
-	keys.sort()
-	var sig := ""
-	for ip in keys:
-		var inf: Dictionary = Net.servers[ip]["info"]
-		sig += "%s|%s|%s|%s;" % [ip, inf.get("name", ""), inf.get("day", 1), inf.get("busy", false)]
-	if sig == _shown_servers:
-		return
-	_shown_servers = sig
-	for c in server_box.get_children():
-		if c != scan_label:
-			c.queue_free()
-	scan_label.visible = keys.is_empty()
-	for ip in keys:
-		var inf2: Dictionary = Net.servers[ip]["info"]
-		var busy: bool = inf2.get("busy", false)
-		var text := "%s  ·  день %d%s" % [inf2.get("name", "Мир"), int(inf2.get("day", 1)), "  ·  занято" if busy else ""]
-		var b := _btn(text, Color(0.25, 0.25, 0.27) if busy else Color(0.16, 0.36, 0.5), _join.bind(str(ip)))
+	var list := Net.server_list()
+	var keys := {}
+	for sv in list:
+		var key: String = sv["key"]
+		keys[key] = true
+		var inf: Dictionary = sv["info"]
+		var busy: bool = inf.get("busy", false)
+		var text := "%s  ·  день %d%s" % [inf.get("name", "Мир"), int(inf.get("day", 1)), "  ·  занято" if busy else ""]
+		var b: Button = server_btns.get(key)
+		if b == null or not is_instance_valid(b):
+			b = _btn(text, Color(0.16, 0.36, 0.5), func(): pass)
+			b.pressed.connect(_join_button.bind(b))
+			server_box.add_child(b)
+			server_btns[key] = b
+		b.set_meta("ip", sv["ip"])
+		if b.text != text:
+			b.text = text
 		b.disabled = busy
-		server_box.add_child(b)
+	for key in server_btns.keys():
+		if not keys.has(key):
+			if is_instance_valid(server_btns[key]):
+				server_btns[key].queue_free()
+			server_btns.erase(key)
+	scan_label.visible = list.is_empty()
+
+func _join_button(b: Button) -> void:
+	_join(str(b.get_meta("ip")))
 
 func _new_game(has_save: bool) -> void:
 	if not has_save:
