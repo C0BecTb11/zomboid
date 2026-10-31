@@ -11,6 +11,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 40
     steps:
+      - uses: actions/checkout@v4
       - name: Download latest APK
         run: |
           mkdir -p apk && cd apk
@@ -30,26 +31,7 @@ jobs:
           profile: pixel_5
           disable-animations: true
           emulator-options: -no-window -gpu swangle_indirect -noaudio -no-boot-anim -camera-back none
-          script: |
-            mkdir -p shots
-            adb install -r apk/zomboid.apk
-            adb shell settings put system accelerometer_rotation 0
-            adb shell cmd package resolve-activity --brief com.c0bectb11.zomboid | tee shots/activity.txt
-            ACT=$(adb shell cmd package resolve-activity --brief com.c0bectb11.zomboid | tail -1 | tr -d '\r')
-            adb shell am start -W -n "$ACT" | tee shots/start.txt
-            sleep 15
-            adb shell dumpsys activity activities | grep -E "mResumedActivity|topResumedActivity" | tee shots/top.txt
-            adb exec-out screencap -p > shots/android_menu.png
-            adb shell wm size
-            adb shell input tap 1170 366
-            sleep 20
-            adb exec-out screencap -p > shots/android_game.png
-            adb shell input swipe 400 800 600 700 1500
-            sleep 3
-            adb exec-out screencap -p > shots/android_walk.png
-            adb logcat -d -s godot:* AndroidRuntime:E > shots/android_log.txt || true
-            adb logcat -d -b crash > shots/crash.txt || true
-            adb logcat -d '*:E' | tail -150 > shots/errors.txt || true
+          script: bash .github/android_test.sh
       - name: Push screenshots
         if: always()
         run: |
