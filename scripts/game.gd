@@ -37,6 +37,8 @@ class Player:
 	var name := ""
 	var remote := false        # движение считает телефон друга (хост только принимает)
 	var force_seq := 0         # хост сдвинул игрока сам — клиент должен принять позицию
+	var move_budget := 1.0     # сколько клеток друг может пройти до следующего пакета
+	var last_in_ms := 0
 	func _init(pid: int = 0) -> void:
 		id = pid
 	func weapon() -> Dictionary: return Items.def(eq if eq != "" else "fists")
@@ -150,6 +152,12 @@ func spawn_zombies(n: int, avoid: Vector2) -> void:
 		var p := Vector2(rnd.randi() % world.w + 0.5, rnd.randi() % world.h + 0.5)
 		if p.distance_to(avoid) < 16.0 or world.circle_blocked(p.x, p.y, ZOMBIE_R):
 			continue
+		var near_player := false
+		for pl: Player in players:
+			if not pl.dead and pl.pos.distance_to(p) < 16.0:
+				near_player = true
+		if near_player:
+			continue
 		var z := Zombie.new(next_zid)
 		next_zid += 1
 		z.pos = p
@@ -192,6 +200,25 @@ func _spawn_friend(pid: int) -> Player:
 	p.inv = [{"id": "water", "n": 1}, {"id": "bandage", "n": 1}]
 	players.append(p)
 	return p
+
+## Хозяин мира погиб, а персонаж друга жив: мир не удаляется, хозяин начинает новым персонажем рядом с другом
+func revive_host() -> bool:
+	var h := player(0)
+	if h != null and not h.dead:
+		return false
+	var near := Vector2(50, 50) if h == null else h.pos
+	for q in players:
+		if q.id != 0 and not q.dead:
+			near = q.pos
+			break
+	if h != null:
+		players.erase(h)
+	var p := Player.new(0)
+	p.pos = unstick(near + Vector2(-0.6, 0), PLAYER_R)
+	p.rpos = p.pos
+	p.inv = [{"id": "water", "n": 1}, {"id": "bandage", "n": 1}]
+	players.insert(0, p)
+	return true
 
 func leave_player(pid: int) -> void:
 	var p := player(pid)
@@ -308,7 +335,15 @@ func _update_player(p: Player, dt: float) -> void:
 	p.attack_anim = maxf(0.0, p.attack_anim - dt * 4.0)
 	var running := false
 	var mag := 0.0
-	if p.remote:
+	if p.remote and p.climb >= 0.0:
+		# перелезание друга хост ведёт сам: нельзя «зависнуть» в окне неуязвимым
+		p.climb += dt / 1.3
+		p.pos = p.cl_from.lerp(p.cl_to, minf(p.climb, 1.0))
+		if p.climb >= 1.0:
+			p.climb = -1.0
+			_release_climb(p)
+			push_player(p, p.cl_to)
+	elif p.remote:
 		# позицию прислал телефон друга; здесь только последствия движения
 		mag = p.move.length() if p.climb < 0.0 else 0.0
 		running = move_speed(p, mag)[1] if mag > 0.1 else false
@@ -337,34 +372,82 @@ func _update_player(p: Player, dt: float) -> void:
 			_perform(p, a)
 	_finish_player(p, dt, running, mag)
 
-## Ввод с телефона друга: позиция, взгляд, перелезание
+## Ввод с телефона друга: позиция, взгляд, перелезание. Всё проверяется — подделку хост откатывает
 func remote_input(p: Player, o: Dictionary) -> void:
-	p.move = Vector2(o.get("mx", 0.0), o.get("my", 0.0))
-	p.run = o.get("run", false)
+	p.move = Vector2(float(o.get("mx", 0.0)), float(o.get("my", 0.0))).limit_length(1.0)
+	p.run = bool(o.get("run", false))
 	if p.dead:
 		return
+	var now := Time.get_ticks_msec()
+	var dt_in := 0.1 if p.last_in_ms == 0 else clampf((now - p.last_in_ms) / 1000.0, 0.0, 1.0)
+	p.last_in_ms = now
+	p.move_budget = minf(p.move_budget + dt_in * 3.9 * 1.25, 2.5)
 	if int(o.get("fs", -1)) != p.force_seq:
 		return    # друг ещё не получил наш принудительный сдвиг
-	var np := Vector2(o.get("x", p.pos.x), o.get("y", p.pos.y))
-	if np.distance_to(p.pos) < 4.0:
-		p.pos = np
-	p.face = Vector2(o.get("fx", p.face.x), o.get("fy", p.face.y))
-	var cl: float = o.get("cl", -1.0)
-	if cl >= 0.0 and p.climb < 0.0:
-		# друг начал лезть в окно
-		var to := Vector2(o.get("ctx", p.pos.x), o.get("cty", p.pos.y))
-		var mid := (p.pos + to) * 0.5
-		var wc := world.idx(floori(mid.x), floori(mid.y))
-		world.climb_occ[wc] = -1 - p.id
-		p.ta_act = null
-		if rnd.randf() < 0.25:
-			var part: int = [Body.L_HAND, Body.R_HAND, Body.L_FORE, Body.R_FORE, Body.L_SHIN, Body.R_SHIN, Body.L_THIGH, Body.R_THIGH][rnd.randi() % 8]
-			wound(p, part, Body.GLASS)
-			msg(p.id, "Порезался о стекло: " + Body.NAMES[part].to_lower())
-		noise(p.pos, 4.0, p)
-	elif cl < 0.0 and p.climb >= 0.0:
-		_release_climb(p)
-	p.climb = cl
+	var np := Vector2(float(o.get("x", p.pos.x)), float(o.get("y", p.pos.y)))
+	var fc := Vector2(float(o.get("fx", p.face.x)), float(o.get("fy", p.face.y)))
+	if fc.length() > 0.01:
+		p.face = fc.normalized()
+	var cl := float(o.get("cl", -1.0))
+	if p.climb >= 0.0:
+		# лезет в окно: позиция только на отрезке перелезания
+		if cl < 0.0:
+			p.climb = -1.0
+			_release_climb(p)
+			if np.distance_to(p.cl_to) < 0.4 and not world.circle_blocked(np.x, np.y, PLAYER_R - 0.05):
+				p.pos = np
+			else:
+				push_player(p, p.cl_to)
+			p.move_budget = 1.0
+			return
+		return      # ход перелезания ведёт хост сам (см. _update_player)
+	if cl >= 0.0:
+		_remote_start_climb(p, o)
+		return
+	var d := np.distance_to(p.pos)
+	if d > p.move_budget + 0.25 or world.circle_blocked(np.x, np.y, PLAYER_R - 0.05) or not _path_free(p.pos, np):
+		push_player(p, p.pos)       # подделка или рассинхрон — вернуть друга туда, где он был
+		return
+	p.move_budget -= d
+	p.pos = np
+
+## Можно ли пройти от a до b, не проходя сквозь стены и закрытые двери (шагами по 0.15)
+func _path_free(a: Vector2, b: Vector2) -> bool:
+	var d := b - a
+	var steps := ceili(d.length() / 0.15)
+	if steps == 0:
+		return true
+	var st := d / steps
+	var c := a
+	for i in steps:
+		var n := _move_circle(c, st, PLAYER_R - 0.05)
+		if n.distance_to(c + st) > 0.1:
+			return false
+		c = n
+	return true
+
+func _remote_start_climb(p: Player, o: Dictionary) -> void:
+	var to := Vector2(float(o.get("ctx", p.pos.x)), float(o.get("cty", p.pos.y)))
+	var mid := (p.pos + to) * 0.5
+	var wc := world.idx(clampi(floori(mid.x), 0, world.w - 1), clampi(floori(mid.y), 0, world.h - 1))
+	var ok := world.t_at(wc) == GameWorld.WINDOW_BROKEN and world.barr_at(wc) == 0 and not world.climb_occ.has(wc)
+	if ok:
+		var c := Vector2(wc % world.w + 0.5, wc / world.w + 0.5)
+		var tg := world.climb_target(wc, p.pos.x, p.pos.y)
+		ok = c.distance_to(p.pos) < 1.15 and tg.distance_to(to) < 0.3 and not world.circle_blocked(tg.x, tg.y, PLAYER_R)
+	if not ok:
+		push_player(p, p.pos)
+		return
+	p.climb = 0.0
+	p.cl_from = p.pos
+	p.cl_to = to
+	world.climb_occ[wc] = -1 - p.id
+	p.ta_act = null
+	if rnd.randf() < 0.25:
+		var part: int = [Body.L_HAND, Body.R_HAND, Body.L_FORE, Body.R_FORE, Body.L_SHIN, Body.R_SHIN, Body.L_THIGH, Body.R_THIGH][rnd.randi() % 8]
+		wound(p, part, Body.GLASS)
+		msg(p.id, "Порезался о стекло: " + Body.NAMES[part].to_lower())
+	noise(p.pos, 4.0, p)
 
 func push_player(p: Player, to: Vector2) -> void:
 	p.pos = to
@@ -417,17 +500,32 @@ func _finish_player(p: Player, dt: float, running: bool, mag: float) -> void:
 	if p.hp <= 0.0:
 		p.hp = 0.0
 		p.dead = true
+		if p.climb >= 0.0:
+			p.climb = -1.0
+			_release_climb(p)      # окно освобождается — иначе в него больше никто не пролезет
 		corpses.append([p.pos.x, p.pos.y, false])
 		msg(p.id, "Ты погиб. Прожито дней: %d" % (day() - 1))
 
 func _move_circle(pos: Vector2, d: Vector2, r: float) -> Vector2:
+	if world.circle_blocked(pos.x, pos.y, r):
+		# оказался внутри препятствия — выталкиваем в ближайшее свободное место, сквозь стены не пускаем
+		return unstick(pos, r)
 	var n := pos
-	var stuck := world.circle_blocked(pos.x, pos.y, r)
-	if stuck or not world.circle_blocked(n.x + d.x, n.y, r):
+	if not world.circle_blocked(n.x + d.x, n.y, r):
 		n.x += d.x
-	if stuck or not world.circle_blocked(n.x, n.y + d.y, r):
+	if not world.circle_blocked(n.x, n.y + d.y, r):
 		n.y += d.y
 	return n
+
+## Ближайшая свободная точка (кольцами до 1.5 клетки)
+func unstick(pos: Vector2, r: float) -> Vector2:
+	for ring in range(1, 16):
+		var dist := ring * 0.1
+		for k in 16:
+			var c := pos + Vector2.from_angle(TAU * k / 16.0) * dist
+			if not world.circle_blocked(c.x, c.y, r):
+				return c
+	return pos
 
 func noise(at: Vector2, radius: float, src: Player) -> void:
 	for z: Zombie in zombies:
@@ -459,6 +557,8 @@ func _update_zombie(z: Zombie, dt: float) -> void:
 			z.climb = -1.0
 			if world.climb_occ.get(z.cl_cell, -999) == z.id:
 				world.climb_occ.erase(z.cl_cell)
+			if world.circle_blocked(z.pos.x, z.pos.y, ZOMBIE_R):
+				z.pos = unstick(z.pos, ZOMBIE_R)
 			z.down = 1.3 + rnd.randf()
 		return
 	if z.down > 0.0:
@@ -503,8 +603,8 @@ func _update_zombie(z: Zombie, dt: float) -> void:
 				if world.t_at(bi) == GameWorld.WINDOW_BROKEN and world.barr_at(bi) == 0:
 					if bp.distance_to(z.pos) < 1.05:
 						z.face = (bp - z.pos).normalized()
+						var tg := world.climb_target(bi, z.pos.x, z.pos.y)
 						if not world.climb_occ.has(bi):
-							var tg := world.climb_target(bi, z.pos.x, z.pos.y)
 							world.climb_occ[bi] = z.id
 							z.cl_cell = bi
 							z.climb = 0.0
@@ -645,7 +745,29 @@ func _timing(p: Player, a: Dictionary) -> Array:
 			if k == Items.Kind.MED: return [0.8, "Таблетки"] if a["id"] == "pills" else [2.2, "Лечение"]
 	return [0.0, ""]
 
+## Действие должно иметь правильные поля нужных типов, иначе отбрасывается
+static func valid_action(a) -> bool:
+	if not (a is Dictionary) or not (a.get("a") is String):
+		return false
+	match a["a"]:
+		"attack":
+			return true
+		"interact", "barr":
+			return a.get("c") is int or a.get("c") is float
+		"use", "drop":
+			return a.get("id") is String and Items.DEFS.has(a["id"])
+		"take", "put":
+			return (a.get("c") is int or a.get("c") is float) and a.get("id") is String and Items.DEFS.has(a["id"])
+		"treat":
+			return (a.get("part") is int or a.get("part") is float) and a.get("w") in ["bandage", "rag", "unbandage", "disinfect", "glass"]
+	return false
+
 func _do_action(p: Player, a: Dictionary) -> void:
+	if not valid_action(a):
+		return
+	for k in ["c", "part"]:
+		if a.has(k):
+			a[k] = int(a[k])
 	if a["a"] == "attack":
 		p.ta_act = null
 	if p.climb >= 0.0:
@@ -735,7 +857,7 @@ func _attack(p: Player) -> void:
 		var best := INF
 		for z: Zombie in zombies:
 			var d: float = z.pos.distance_to(p.pos)
-			if d >= w["range"] or not world.los(p.pos.x, p.pos.y, z.pos.x, z.pos.y):
+			if d >= w["range"] or not world.los(p.pos.x, p.pos.y, z.pos.x, z.pos.y, true):
 				continue
 			var score := d - 3.0 * (z.pos - p.pos).dot(p.face) / maxf(d, 0.01)
 			if score < best:
@@ -759,7 +881,7 @@ func _attack(p: Player) -> void:
 	var dd := INF
 	for z: Zombie in zombies:
 		var d: float = z.pos.distance_to(p.pos)
-		if z.down > 0.0 and d < 1.2 and d < dd:
+		if z.down > 0.0 and d < 1.2 and d < dd and _reachable(p, z):
 			dd = d
 			downed = z
 	var standing_front := false
@@ -775,13 +897,13 @@ func _attack(p: Player) -> void:
 	var bd := INF
 	for z: Zombie in zombies:
 		var d: float = z.pos.distance_to(p.pos)
-		if z.down <= 0.0 and d < reach and _in_front(p, z) and d < bd:
+		if z.down <= 0.0 and d < reach and _in_front(p, z) and d < bd and _reachable(p, z):
 			bd = d
 			tz = z
 	if tz == null:
 		for z: Zombie in zombies:
 			var d: float = z.pos.distance_to(p.pos)
-			if z.down <= 0.0 and d < reach and d < bd:
+			if z.down <= 0.0 and d < reach and d < bd and _reachable(p, z):
 				bd = d
 				tz = z
 	if tz != null:
@@ -799,6 +921,9 @@ func _attack(p: Player) -> void:
 func _in_front(p: Player, z: Zombie) -> bool:
 	var d: float = z.pos.distance_to(p.pos)
 	return (z.pos - p.pos).dot(p.face) / maxf(d, 0.01) > 0.35
+
+func _reachable(p: Player, z: Zombie) -> bool:
+	return world.los(p.pos.x, p.pos.y, z.pos.x, z.pos.y)
 
 func _hit_zombie(p: Player, z: Zombie, dmg: float) -> void:
 	z.hp -= dmg
@@ -864,9 +989,14 @@ func _barricade(p: Player, cell: int) -> void:
 	if not near_cell(p, cell, 1.8) or not can_barricade(p, cell):
 		return
 	var c := Vector2(cell % world.w + 0.5, cell / world.w + 0.5)
+	var lim := 0.5 + PLAYER_R
 	for o: Player in players:
-		if not o.dead and o.pos.distance_to(c) < 0.75:
+		if not o.dead and absf(o.pos.x - c.x) < lim and absf(o.pos.y - c.y) < lim:
 			msg(p.id, "Отойди от проёма")
+			return
+	for z: Zombie in zombies:
+		if absf(z.pos.x - c.x) < 0.5 + ZOMBIE_R and absf(z.pos.y - c.y) < 0.5 + ZOMBIE_R:
+			msg(p.id, "В проёме зомби")
 			return
 	p.take("planks", 1)
 	world.barr[cell] = world.barr_at(cell) + 1
@@ -939,6 +1069,12 @@ func treat(p: Player, part: int, what: String) -> void:
 	var pname: String = Body.NAMES[part].to_lower()
 	match what:
 		"bandage", "rag":
+			if bp.wounds.is_empty():
+				msg(p.id, "Здесь нечего перевязывать")
+				return
+			if bp.bandage != 0 and not bp.dirty():
+				msg(p.id, "Повязка ещё чистая")
+				return
 			if not p.take(what):
 				msg(p.id, "Нет: " + Items.def(what)["name"])
 				return
@@ -951,6 +1087,13 @@ func treat(p: Player, part: int, what: String) -> void:
 			bp.bandage = 0
 			bp.bandage_age = 0.0
 		"disinfect":
+			var need := false
+			for w in bp.wounds:
+				if not w.disinfected:
+					need = true
+			if not need:
+				msg(p.id, "Обрабатывать нечего")
+				return
 			if not p.take("disinfectant"):
 				msg(p.id, "Нужно дезинфицирующее средство")
 				return
@@ -969,6 +1112,7 @@ func treat(p: Player, part: int, what: String) -> void:
 					w.bleed = maxf(w.bleed, 30.0)
 					msg(p.id, "Осколок извлечён: " + pname)
 					return
+			msg(p.id, "Осколков нет: " + pname)
 
 # ================== ЦЕЛИ ДЛЯ КНОПОК ==================
 func find_interact(p: Player) -> int:
@@ -1027,18 +1171,19 @@ func player_data(p: Player) -> Dictionary:
 		"body": p.body.to_data(), "inf": snappedf(p.infection, 0.01), "dead": p.dead, "k": p.kills, "eq": p.eq,
 		"inv": Items.copy(p.inv), "aa": snappedf(p.attack_anim, 0.01), "con": p.connected, "sn": p.sneaking,
 		"cl": snappedf(p.climb, 0.01), "tn": p.ta_name if p.ta_act != null else "", "tp": snappedf(p.ta_progress(), 0.01),
-		"nm": p.name, "fs": p.force_seq}
+		"nm": p.name, "fs": p.force_seq,
+		"cfx": snappedf(p.cl_from.x, 0.01), "cfy": snappedf(p.cl_from.y, 0.01), "ctx": snappedf(p.cl_to.x, 0.01), "cty": snappedf(p.cl_to.y, 0.01)}
 
 func player_from(o: Dictionary, p: Player) -> void:
-	p.pos = Vector2(o["x"], o["y"])
-	p.face = Vector2(o["fx"], o["fy"])
-	p.hp = o["hp"]
-	p.hunger = o["hu"]
-	p.thirst = o["th"]
-	p.stamina = o["st"]
+	p.pos = Vector2(float(o.get("x", p.pos.x)), float(o.get("y", p.pos.y)))
+	p.face = Vector2(float(o.get("fx", 1.0)), float(o.get("fy", 0.0)))
+	p.hp = float(o.get("hp", 100.0))
+	p.hunger = float(o.get("hu", 10.0))
+	p.thirst = float(o.get("th", 10.0))
+	p.stamina = float(o.get("st", 100.0))
 	p.body.from_data(o.get("body"))
-	p.infection = o["inf"]
-	p.dead = o["dead"]
+	p.infection = float(o.get("inf", 0.0))
+	p.dead = bool(o.get("dead", false))
 	p.kills = int(o.get("k", 0))
 	p.eq = o.get("eq", "")
 	p.inv.clear()
@@ -1047,7 +1192,9 @@ func player_from(o: Dictionary, p: Player) -> void:
 	p.attack_anim = o.get("aa", 0.0)
 	p.connected = o.get("con", true)
 	p.sneaking = o.get("sn", false)
-	p.climb = o.get("cl", -1.0)
+	p.climb = float(o.get("cl", -1.0))
+	p.cl_from = Vector2(float(o.get("cfx", p.pos.x)), float(o.get("cfy", p.pos.y)))
+	p.cl_to = Vector2(float(o.get("ctx", p.pos.x)), float(o.get("cty", p.pos.y)))
 	p.name = o.get("nm", "")
 	p.force_seq = int(o.get("fs", 0))
 	var tn: String = o.get("tn", "")
@@ -1079,13 +1226,31 @@ func to_data() -> Dictionary:
 	var ps := []
 	for p: Player in players:
 		ps.append(player_data(p))
-	return {"v": 2, "seed": seed, "time": time, "uids": uids.duplicate(), "tiles": Marshalls.raw_to_base64(world.tiles),
+	return {"v": SAVE_VERSION, "seed": seed, "time": time, "uids": uids.duplicate(), "tiles": Marshalls.raw_to_base64(world.tiles),
 		"thp": thp, "barr": ba, "cont": _cont_data(world.containers), "z": zs, "p": ps, "corpses": corpses.duplicate(true)}
 
+const SAVE_VERSION := 3
+
+## Проверка формата: без карты мира загружать нечего
+static func valid_save(o) -> bool:
+	if not (o is Dictionary) or not (o.get("tiles") is String):
+		return false
+	return Marshalls.base64_to_raw(o["tiles"]).size() == 100 * 100
+
+## Старые версии: v2 (до ID друзей) — недостающие поля заполняются по умолчанию
+static func migrate(o: Dictionary) -> Dictionary:
+	var v := int(o.get("v", 1))
+	if v < 3:
+		if not o.has("uids"):
+			o["uids"] = {}
+	o["v"] = SAVE_VERSION
+	return o
+
 func load_data(o: Dictionary) -> void:
-	time = o["time"]
-	uids = o.get("uids", {}).duplicate()
-	var t := Marshalls.base64_to_raw(o["tiles"])
+	o = migrate(o)
+	time = float(o.get("time", 8 * 60.0))
+	uids = o.get("uids", {}).duplicate() if o.get("uids") is Dictionary else {}
+	var t := Marshalls.base64_to_raw(str(o.get("tiles", "")))
 	for i in mini(t.size(), world.tiles.size()):
 		world.tiles[i] = t[i]
 	world.compute_buildings()
@@ -1116,6 +1281,13 @@ func load_data(o: Dictionary) -> void:
 	for e in o.get("p", []):
 		var p := Player.new(int(e["id"]))
 		player_from(e, p)
+		if p.climb >= 0.0 and not is_replica:
+			# сохранились посреди окна — ставим туда, куда он лез
+			if not world.circle_blocked(p.cl_to.x, p.cl_to.y, PLAYER_R):
+				p.pos = p.cl_to
+			elif world.circle_blocked(p.pos.x, p.pos.y, PLAYER_R):
+				p.pos = unstick(p.cl_from, PLAYER_R)
+			p.climb = -1.0
 		p.rpos = p.pos
 		players.append(p)
 	corpses.clear()

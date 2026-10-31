@@ -42,6 +42,7 @@ var b_pause := [Vector2.ZERO, 24.0]
 var treat_btns: Array = []   # [Rect2, что]
 var btn_a := Rect2()
 var btn_b := Rect2()
+var btn_c := Rect2()
 var btn_close := Rect2()
 var dead_btn := Rect2()
 var panel_rect := Rect2()
@@ -105,7 +106,7 @@ func tick(dt: float) -> void:
 		elif not g.world.containers.has(loot_cell) and GameWorld.is_container(g.world.t_at(loot_cell)):
 			if me.ta_act == null:
 				loot_wait += dt
-				if loot_wait > 0.4:
+				if loot_wait > (1.0 if screen.mode == GameScreen.Mode.CLIENT else 0.4):
 					panel = Pnl.NONE
 			else:
 				loot_wait = 0.0
@@ -197,7 +198,7 @@ func _touch(type: int, id: int, p: Vector2) -> void:
 			for pl in g.players:
 				if not pl.dead:
 					all_dead = false
-			screen.request_exit(screen.mode == GameScreen.Mode.SOLO or (screen.mode == GameScreen.Mode.HOST and all_dead))
+			screen.request_exit(screen.mode != GameScreen.Mode.CLIENT and all_dead)
 		return
 	if panel != Pnl.NONE:
 		_panel_touch(g, me, type, id, p)
@@ -292,6 +293,9 @@ func _panel_tap(g: GameState, me: GameState.Player, p: Vector2) -> void:
 				panel = Pnl.NONE
 			elif btn_b.has_point(p):
 				screen.request_exit(false)
+			elif btn_c.has_point(p):
+				Net.low_gfx = not Net.low_gfx
+				Net.save_profile()
 		Pnl.INV:
 			var col := _col_rect(0, 1)
 			if col.has_point(p):
@@ -667,7 +671,10 @@ func _draw_pause() -> void:
 	_rr(btn_b, 10, Color(0.42, 0.24, 0.24))
 	_text(btn_a.get_center() + Vector2(0, 6), "Продолжить", 16, Color.WHITE, HORIZONTAL_ALIGNMENT_CENTER)
 	_text(btn_b.get_center() + Vector2(0, 6), "Отключиться" if screen.mode == GameScreen.Mode.CLIENT else "Сохранить и выйти", 16, Color.WHITE, HORIZONTAL_ALIGNMENT_CENTER)
-	_text(Vector2(cx, y + 66 + 80), "Игра сохраняется сама каждую минуту", 12, Color(0.56, 0.56, 0.56), HORIZONTAL_ALIGNMENT_CENTER)
+	btn_c = Rect2(cx - bw / 2, y + 132, bw, 50)
+	_rr(btn_c, 10, Color(0.26, 0.29, 0.34))
+	_text(btn_c.get_center() + Vector2(0, 6), "Графика: низкая" if Net.low_gfx else "Графика: высокая", 16, Color.WHITE, HORIZONTAL_ALIGNMENT_CENTER)
+	_text(Vector2(cx, y + 132 + 80), "Игра сохраняется сама каждую минуту", 12, Color(0.56, 0.56, 0.56), HORIZONTAL_ALIGNMENT_CENTER)
 
 # ---------- экран «Тело» ----------
 const PART_BOXES := [

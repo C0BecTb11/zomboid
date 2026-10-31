@@ -16,6 +16,7 @@ var peer_id := 0
 # ---------- профиль ----------
 var uid := ""
 var nick := ""
+var low_gfx := false             # «Графика: низкая» — для слабых телефонов
 
 # ---------- объявление мира (хост) ----------
 var adv_info: Callable           # () -> Dictionary
@@ -40,6 +41,7 @@ func _load_profile() -> void:
 	cfg.load("user://settings.cfg")
 	uid = cfg.get_value("profile", "uid", "")
 	nick = cfg.get_value("profile", "nick", "")
+	low_gfx = bool(cfg.get_value("gfx", "low", false))
 	if uid == "":
 		var c := Crypto.new()
 		uid = c.generate_random_bytes(12).hex_encode()
@@ -52,6 +54,7 @@ func save_profile() -> void:
 	cfg.load("user://settings.cfg")
 	cfg.set_value("profile", "uid", uid)
 	cfg.set_value("profile", "nick", nick)
+	cfg.set_value("gfx", "low", low_gfx)
 	cfg.save("user://settings.cfg")
 
 # ================== ENet ==================

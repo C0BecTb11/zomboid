@@ -114,7 +114,8 @@ func circle_blocked(cx: float, cy: float, r: float) -> bool:
 				return true
 	return false
 
-func los(ax: float, ay: float, bx: float, by: float) -> bool:
+## shot=true — для пули: целое стекло и любая баррикада тоже останавливают
+func los(ax: float, ay: float, bx: float, by: float, shot: bool = false) -> bool:
 	var dx := bx - ax
 	var dy := by - ay
 	var steps := int(maxf(absf(dx), absf(dy)) * 2.5) + 1
@@ -135,6 +136,8 @@ func los(ax: float, ay: float, bx: float, by: float) -> bool:
 		if (x == tx and y == ty) or (x == sx and y == sy):
 			continue
 		if opaque(x, y):
+			return false
+		if shot and inside(x, y) and (t(x, y) == WINDOW or barr_at(idx(x, y)) > 0):
 			return false
 	return true
 

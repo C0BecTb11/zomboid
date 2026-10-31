@@ -20,7 +20,7 @@ var door_angle := {}
 var door_mesh: ArrayMesh
 var players := {}             # id → CharModel
 var zombies := {}             # id → CharModel
-var corpse_nodes: Array = []
+var corpse_map := {}             # ключ трупа → модель
 var corpse_count := -1
 var corpse_last := []
 var walk := {}                # id → [фаза, x, y, скорость]
@@ -520,9 +520,12 @@ func _place_scene(g: GameState, me: GameState.Player) -> void:
 			if absf(l[2] - t.x) < 20.0 and absf(l[3] - t.z) < 20.0:
 				near_l.append(l)
 		near_l.sort_custom(func(a, b): return Vector2(a[2] - t.x, a[3] - t.z).length() < Vector2(b[2] - t.x, b[3] - t.z).length())
+	# низкая графика: без теней от солнца и не больше 2 фонарей
+	sun.shadow_enabled = not Net.low_gfx
+	var max_l := 2 if Net.low_gfx else lamp_lights.size()
 	for i in lamp_lights.size():
 		var o: OmniLight3D = lamp_lights[i]
-		if i < near_l.size():
+		if i < near_l.size() and i < max_l:
 			o.visible = true
 			o.position = Vector3(near_l[i][2], 2.7, near_l[i][3])
 			o.light_energy = 0.9 * lk
@@ -560,16 +563,20 @@ func _place_scene(g: GameState, me: GameState.Player) -> void:
 		var d := Vector2(z.rpos.x - t.x, z.rpos.y - t.z)
 		if absf(d.x) > VIS_R or absf(d.y) > VIS_R:
 			continue
+		seen[z.id] = true
 		var v := _vis_at(z.rpos)
 		if v < 0.2 and z.climb < 0.0:
+			# не видно: модель прячем, а не удаляем — без пересоздания каждые полсекунды
+			if zombies.has(z.id):
+				zombies[z.id].visible = false
 			continue
-		seen[z.id] = true
 		if not zombies.has(z.id):
 			var zm := CharModel.new()
 			zm.setup(_zcols(z.id), true, z.id % 2 == 0, false)
 			add_child(zm)
 			zombies[z.id] = zm
 		var m2: CharModel = zombies[z.id]
+		m2.visible = true
 		var st2: Array = walk.get(100000 + z.id, [0.0, z.rpos, 0.0])
 		m2.position = Vector3(z.rpos.x, _ground_at(z.rpos.x, z.rpos.y), z.rpos.y)
 		m2.rotation.y = atan2(z.face.x, z.face.y)
@@ -585,10 +592,18 @@ func _place_scene(g: GameState, me: GameState.Player) -> void:
 	if cl.size() != corpse_count or (cl.size() > 0 and cl[cl.size() - 1] != corpse_last):
 		corpse_count = cl.size()
 		corpse_last = cl[cl.size() - 1] if cl.size() > 0 else []
-		for n in corpse_nodes:
-			n.queue_free()
-		corpse_nodes.clear()
+		# только новые трупы создаём, исчезнувшие удаляем — без пересборки всех сразу
+		var want := {}
 		for c in cl:
+			want["%.2f,%.2f,%s" % [c[0], c[1], c[2]]] = c
+		for k in corpse_map.keys():
+			if not want.has(k):
+				corpse_map[k].queue_free()
+				corpse_map.erase(k)
+		for k in want:
+			if corpse_map.has(k):
+				continue
+			var c: Array = want[k]
 			var seed := int(c[0] * 13 + c[1] * 7) & 0x7FFFFFFF
 			var cm2 := CharModel.new()
 			cm2.setup(_zcols(seed) if c[2] else _pcols(0), c[2], false, false, true)
@@ -596,7 +611,7 @@ func _place_scene(g: GameState, me: GameState.Player) -> void:
 			cm2.position = Vector3(c[0], _ground_at(c[0], c[1]) + 0.004, c[1])
 			cm2.rotation.y = deg_to_rad(seed % 360)
 			cm2.pose(0, 0, 0, "", true, false, false, -1.0)
-			corpse_nodes.append(cm2)
+			corpse_map[k] = cm2
 			if blood.size() < 220:
 				blood.append([c[0], _ground_at(c[0], c[1]) + 0.004, c[1] + 0.3, deg_to_rad(seed % 360), 1.0])
 				blood_dirty = true

@@ -15,6 +15,9 @@ func _ready() -> void:
 		elif a.begins_with("--shot="):
 			shot = a.substr(7)
 	get_tree().set_auto_accept_quit(false)
+	if "--audit" in OS.get_cmdline_user_args():
+		add_child(load("res://scripts/audit_test.gd").new())
+		return
 	for a in OS.get_cmdline_user_args():
 		if a.begins_with("--nettest="):
 			var nt = load("res://scripts/nettest.gd").new()
@@ -55,7 +58,16 @@ func _notification(what: int) -> void:
 		get_tree().quit()
 	elif what == NOTIFICATION_WM_GO_BACK_REQUEST:
 		if screen != null and screen.hud != null:
-			screen.hud.panel = Hud.Pnl.PAUSE if screen.hud.panel == Hud.Pnl.NONE else Hud.Pnl.NONE
+			var h: Hud = screen.hud
+			h._release()          # пальцы, зажатые до паузы, больше не двигают персонажа
+			h.panel_id = -1
+			if screen.game == null:
+				screen.request_exit(false)      # ещё ждём мир друга — «Назад» = отмена
+			else:
+				h.panel = Hud.Pnl.PAUSE if h.panel == Hud.Pnl.NONE else Hud.Pnl.NONE
+		elif screen == null and is_instance_valid(server_box) and server_box.is_inside_tree():
+			Net.stop_scan()
+			_show_menu()
 		elif screen == null:
 			get_tree().quit()
 
@@ -114,6 +126,7 @@ func _show_menu() -> void:
 		screen.queue_free()
 		screen = null
 	Net.close()
+	Net.stop_scan()
 	var col := _menu_base()
 	col.add_child(_label("МЁРТВЫЙ ГОРОД", 34, Color(0.82, 0.25, 0.25)))
 	col.add_child(_label("Вот так ты и умрёшь. Вопрос — когда.", 16, Color(0.56, 0.56, 0.56)))
@@ -256,6 +269,7 @@ func _start(mode: int, g: GameState) -> void:
 		for p in g.players:
 			if p.id != 0:
 				p.connected = false
+		g.revive_host()
 	screen = GameScreen.new()
 	add_child(screen)
 	screen.start(mode, g)

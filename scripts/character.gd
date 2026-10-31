@@ -28,6 +28,7 @@ static var _weapon_cache := {}
 static var _mat: StandardMaterial3D
 static var _mat_corpse: StandardMaterial3D
 static var _mat_eyes: StandardMaterial3D
+static var _eye_mesh: BoxMesh
 
 var skel: Skeleton3D
 var mi: MeshInstance3D
@@ -81,9 +82,10 @@ func setup(cols: Array, is_zombie: bool, stain: bool, long_hair: bool, corpse: b
 		ba.bone_name = "head"
 		skel.add_child(ba)
 		eyes = MeshInstance3D.new()
-		var em := BoxMesh.new()
-		em.size = Vector3(0.11, 0.022, 0.012)
-		eyes.mesh = em
+		if _eye_mesh == null:
+			_eye_mesh = BoxMesh.new()
+			_eye_mesh.size = Vector3(0.11, 0.022, 0.012)
+		eyes.mesh = _eye_mesh
 		eyes.material_override = _mat_eyes
 		eyes.position = Vector3(0, 0.02, 0.104)
 		eyes.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF

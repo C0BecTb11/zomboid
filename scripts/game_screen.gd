@@ -76,7 +76,8 @@ func _notification(what: int) -> void:
 var connect_t := 0.0
 
 func _process(dt: float) -> void:
-	dt = minf(dt, 0.05)
+	dt = minf(dt, 0.1)
+	act_budget = 30
 	_handle_net()
 	if game == null and mode == Mode.CLIENT and not lost:
 		connect_t += dt
@@ -156,6 +157,7 @@ func _process(dt: float) -> void:
 	hud.queue_redraw()
 
 var friend_pid := -1
+var act_budget := 30            # не больше 30 действий друга за кадр
 var state_t := 0.0
 var full_t := 0.0
 var last_corpses := -1
@@ -189,9 +191,17 @@ func adv_info() -> Dictionary:
 func _handle_net() -> void:
 	while Net.inbox.size() > 0:
 		var o: Dictionary = Net.inbox.pop_front()
-		match o.get("t", ""):
+		var t := str(o.get("t", ""))
+		# хост принимает от клиента только вход/ввод/действия, клиент — только данные мира
+		if mode == Mode.HOST and not (t in ["hello", "in", "act", "disconnect"]):
+			continue
+		if mode == Mode.CLIENT and not (t in ["init", "st", "ev", "disconnect"]):
+			continue
+		if mode == Mode.SOLO:
+			continue
+		match t:
 			"hello":
-				if mode == Mode.HOST and game != null:
+				if game != null and friend_pid < 0:
 					var fp := game.join_player(str(o.get("uid", "")), str(o.get("nick", "Друг")))
 					friend_pid = fp.id
 					Net.send({"t": "init", "pid": fp.id, "seed": game.seed, "world": game.to_data()})
@@ -203,6 +213,8 @@ func _handle_net() -> void:
 					hud.add_msg("%s в игре" % fp.name)
 					save_now()
 			"init":
+				if game != null:
+					continue
 				var g := GameState.new(int(o["seed"]))
 				g.is_replica = true
 				g.load_data(o["world"])
@@ -226,7 +238,8 @@ func _handle_net() -> void:
 					if pl != null:
 						game.remote_input(pl, o)
 			"act":
-				if game != null and friend_pid >= 0:
+				if game != null and friend_pid >= 0 and act_budget > 0:
+					act_budget -= 1
 					var a := o.duplicate()
 					a.erase("t")
 					game.actions.append([friend_pid, a])

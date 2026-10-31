@@ -36,7 +36,7 @@ func _process(dt: float) -> void:
 			log_t -= dt
 			if log_t <= 0.0 and fp != null:
 				log_t = 1.0
-				L("друг на хосте: pos=%s move=%s" % [fp.pos.snapped(Vector2(0.01, 0.01)), fp.move.snapped(Vector2(0.01, 0.01))])
+				L("друг на хосте: pos=%s move=%s откатов=%d" % [fp.pos.snapped(Vector2(0.01, 0.01)), fp.move.snapped(Vector2(0.01, 0.01)), fp.force_seq])
 		if t > 40.0:
 			L("сохранение uids=%s" % str(scr.game.uids if scr and scr.game else {}))
 			get_tree().quit()
