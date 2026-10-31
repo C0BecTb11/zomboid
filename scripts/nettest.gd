@@ -12,6 +12,19 @@ var saved_pos := Vector2.ZERO
 var st_count := 0
 var first_pid := -1
 
+var last_r := Vector2.ZERO
+var run_frames := 0
+var run_frozen := 0
+var run_max := 0.0
+var last_in := 0
+var frames_c := 0
+var host_move_at := -1.0
+var h_last := Vector2.ZERO
+var h_frames := 0
+var h_frozen := 0
+var h_max := 0.0
+var in_count := 0
+
 func _ready() -> void:
 	set_process(true)
 
@@ -33,10 +46,27 @@ func _process(dt: float) -> void:
 				fp.inv.append({"id": "crowbar", "n": 1})
 				fp.set_meta("given", true)
 				L("выдал другу лом (pid %d)" % fp.id)
+			if fp != null:
+				# как хост видит бегущего друга: кадры без движения и самые большие скачки
+				var stp: float = fp.rpos.distance_to(last_r)
+				if fp.move.length() > 0.1 and fp.rpos.distance_to(fp.pos) < 2.0:
+					run_frames += 1
+					if stp < 0.0001:
+						run_frozen += 1
+					run_max = maxf(run_max, stp)
+				last_r = fp.rpos
+				if fp.last_in_ms != last_in:
+					last_in = fp.last_in_ms
+					in_count += 1
 			log_t -= dt
 			if log_t <= 0.0 and fp != null:
 				log_t = 1.0
-				L("друг на хосте: pos=%s move=%s откатов=%d" % [fp.pos.snapped(Vector2(0.01, 0.01)), fp.move.snapped(Vector2(0.01, 0.01)), fp.force_seq])
+				L("друг на хосте: pos=%s move=%s откатов=%d | пакетов %d (принято %d, отправлено %d) | рисуется плавно: кадров бега %d, замираний %d, макс. шаг %.3f" % [fp.pos.snapped(Vector2(0.01, 0.01)), fp.move.snapped(Vector2(0.01, 0.01)), fp.force_seq, in_count, Net.n_fast_in, Net.n_fast_out, run_frames, run_frozen, run_max])
+		if scr != null and scr.game != null:
+			if host_move_at < 0.0 and scr.friend_pid >= 0 and scr.game.player(scr.friend_pid) != null and scr.game.player(scr.friend_pid).move.length() == 0.0 and t > 6.0:
+				host_move_at = t
+			if host_move_at > 0.0:
+				scr.debug_move = Vector2(-1, 0) if t - host_move_at < 1.5 else Vector2.ZERO
 		if t > 40.0:
 			L("сохранение uids=%s" % str(scr.game.uids if scr and scr.game else {}))
 			get_tree().quit()
@@ -67,14 +97,29 @@ func _process(dt: float) -> void:
 				log_t = 2.0
 		3:
 			log_t -= dt
+			frames_c += 1
 			if log_t <= 0.0:
+				L("кадров за 2 с бега: %d, отправлено быстрых %d, принято %d" % [frames_c, Net.n_fast_out, Net.n_fast_in])
 				scr.debug_move = Vector2.ZERO
 				L("остановился на %s" % scr.me().pos.snapped(Vector2(0.01, 0.01)))
 				step = 4
 				log_t = 2.0
 		4:
+			# как друг видит бегущего хозяина
+			var hp := scr.game.player(0)
+			if hp != null and hp.snaps.size() >= 4:
+				var sn: Array = hp.snaps
+				var moving: bool = absf(sn[sn.size() - 1][1] - sn[sn.size() - 4][1]) > 0.05
+				var stp := hp.rpos.distance_to(h_last)
+				if moving:
+					h_frames += 1
+					if stp < 0.0001:
+						h_frozen += 1
+					h_max = maxf(h_max, stp)
+				h_last = hp.rpos
 			log_t -= dt
 			if log_t <= 0.0:
+				L("хозяин у друга: кадров бега %d, замираний %d, макс. шаг %.3f" % [h_frames, h_frozen, h_max])
 				saved_pos = scr.me().pos
 				L("инвентарь перед выходом: %s, лом=%d" % [str(scr.me().inv), scr.me().count("crowbar")])
 				scr.request_exit(false)

@@ -17,6 +17,8 @@ static func create(kind: String) -> GameState:
 			g.time = 19 * 60.0 + 50.0
 		"climb":
 			_climb(g, p)
+		"stomp", "fall", "stomp_pose":
+			_victim(g, p, kind != "fall")
 	if kind == "zombies" or kind == "night":
 		for k in 7:
 			var a := k * 0.9
@@ -106,3 +108,48 @@ static func _climb(g: GameState, p: GameState.Player) -> void:
 	z.rpos = z.pos
 	g.zombies.append(z)
 	g.freeze = true
+
+
+## Зомби прямо перед игроком: лежачий (добивание ногой) или стоящий при смерти (падение)
+static func _victim(g: GameState, p: GameState.Player, downed: bool) -> void:
+	# открытое место на улице, чтобы ничего не заслоняло
+	var w := g.world
+	var best := Vector2.ZERO
+	var bd := 1e9
+	for y in range(6, w.h - 6):
+		for x in range(6, w.w - 6):
+			var free := true
+			for yy in range(y - 3, y + 4):
+				for xx in range(x - 3, x + 4):
+					if w.solid(xx, yy) or w._is_building_tile(w.t(xx, yy)):
+						free = false
+						break
+				if not free:
+					break
+			if free:
+				var d := Vector2(x, y).distance_to(p.pos)
+				if d < bd:
+					bd = d
+					best = Vector2(x + 0.5, y + 0.5)
+	if bd < 1e9:
+		p.pos = best
+		p.rpos = best
+	var keep := []
+	for z in g.zombies:
+		if z.pos.distance_to(p.pos) >= 12.0:
+			keep.append(z)
+	g.zombies = keep
+	for d in [Vector2(1, 0), Vector2(0, 1), Vector2(-1, 0), Vector2(0, -1)]:
+		var zp: Vector2 = p.pos + d * (0.8 if downed else 0.9)
+		if not g.world.circle_blocked(zp.x, zp.y, GameState.ZOMBIE_R + 0.1):
+			var z := GameState.Zombie.new(9200)
+			z.pos = zp
+			z.rpos = zp
+			z.face = -d
+			z.hp = 500.0 if downed else 1.0
+			z.speed = 0.0
+			if downed:
+				z.down = 100.0
+			g.zombies.append(z)
+			p.face = d
+			break

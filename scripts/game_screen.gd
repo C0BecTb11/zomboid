@@ -43,6 +43,8 @@ func me() -> GameState.Player:
 
 func act(a: Dictionary) -> void:
 	if mode == Mode.CLIENT:
+		if a.get("a") == "attack" and game != null and me() != null:
+			game.predict_attack(me())
 		var m := a.duplicate()
 		m["t"] = "act"
 		Net.send(m)
@@ -106,24 +108,23 @@ func _process(dt: float) -> void:
 		input_t -= dt
 		if input_t <= 0.0 and p != null:
 			input_t = 0.05
-			var o := {"t": "in", "mx": mv.x, "my": mv.y, "run": run, "x": p.pos.x, "y": p.pos.y,
+			var o := {"t": "in", "ts": Time.get_ticks_msec(), "mx": mv.x, "my": mv.y, "run": run, "x": p.pos.x, "y": p.pos.y,
 				"fx": p.face.x, "fy": p.face.y, "cl": p.climb, "fs": p.force_seq}
 			if p.climb >= 0.0:
 				o["ctx"] = p.cl_to.x
 				o["cty"] = p.cl_to.y
 			Net.send_fast(o)
 		game.tick_replica(dt)
-		var k := minf(1.0, dt * 14.0)
+		# всё чужое рисуем чуть в прошлом, между двумя пришедшими снимками — плавно и без забегания
+		var rt := render_time()
 		for z in game.zombies:
-			if z.rpos.distance_to(z.pos) > 3.0:
-				z.rpos = z.pos
-			z.rpos = z.rpos.lerp(z.pos, k)
+			GameState.sample_snaps(z, rt)
 		for pl in game.players:
 			if pl.id == local_pid:
+				pl.rface = pl.face
+				pl.rclimb = pl.climb
 				continue
-			if pl.rpos.distance_to(pl.pos) > 3.0:
-				pl.rpos = pl.pos
-			pl.rpos = pl.rpos.lerp(pl.pos, k)
+			GameState.sample_snaps(pl, rt)
 	else:
 		if p != null:
 			p.move = mv
@@ -133,8 +134,16 @@ func _process(dt: float) -> void:
 			game.update(dt)
 		for z in game.zombies:
 			z.rpos = z.pos
+			z.rface = z.face
+			z.rclimb = z.climb
+		var rt2 := render_time()
 		for pl in game.players:
-			pl.rpos = pl.pos
+			if pl.remote and pl.connected:
+				GameState.sample_snaps(pl, rt2)     # друг: плавно по его пакетам
+			else:
+				pl.rpos = pl.pos
+				pl.rface = pl.face
+				pl.rclimb = pl.climb
 		for m in game.pop_messages(local_pid):
 			hud.add_msg(m)
 		if mode == Mode.HOST:
@@ -157,6 +166,15 @@ func _process(dt: float) -> void:
 	hud.queue_redraw()
 
 var friend_pid := -1
+# часы второго телефона: задержка отрисовки подстраивается под качество Wi‑Fi
+var clock := GameState.NetClock.new()
+
+func clock_sample(ts: float) -> void:
+	clock.sample(ts, Time.get_ticks_msec())
+
+func render_time() -> float:
+	return clock.render_time(Time.get_ticks_msec())
+
 var act_budget := 30            # не больше 30 действий друга за кадр
 var state_t := 0.0
 var full_t := 0.0
@@ -202,6 +220,7 @@ func _handle_net() -> void:
 		match t:
 			"hello":
 				if game != null and friend_pid < 0:
+					clock = GameState.NetClock.new()
 					var fp := game.join_player(str(o.get("uid", "")), str(o.get("nick", "Друг")))
 					friend_pid = fp.id
 					Net.send({"t": "init", "pid": fp.id, "seed": game.seed, "world": game.to_data()})
@@ -226,6 +245,7 @@ func _handle_net() -> void:
 					_make_view()
 			"st":
 				if game != null:
+					clock_sample(float(o.get("ts", 0)))
 					game.apply_state(o, local_pid)
 			"ev":
 				if game != null:
@@ -237,6 +257,10 @@ func _handle_net() -> void:
 					var pl := game.player(friend_pid)
 					if pl != null:
 						game.remote_input(pl, o)
+						if o.has("ts"):
+							var ts := float(o["ts"])
+							clock_sample(ts)
+							GameState.push_snap(pl, ts, pl.pos, pl.face, pl.climb)
 			"act":
 				if game != null and friend_pid >= 0 and act_budget > 0:
 					act_budget -= 1

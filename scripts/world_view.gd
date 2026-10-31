@@ -21,6 +21,10 @@ var door_mesh: ArrayMesh
 var players := {}             # id → CharModel
 var zombies := {}             # id → CharModel
 var corpse_map := {}             # ключ трупа → модель
+var corpse_anim := {}            # трупы, которые ещё падают
+var corpse_count_seen := -1
+var dying := {}                  # id → [модель, сколько ещё ждать труп]
+var zfall := {}                  # id зомби → 0..1 насколько упал
 var corpse_count := -1
 var corpse_last := []
 var walk := {}                # id → [фаза, x, y, скорость]
@@ -324,17 +328,22 @@ func update(dt: float, g: GameState, me: GameState.Player, local_pid: int) -> vo
 		_walk_update(100000 + z.id, z.rpos, dt)
 	if walk.size() > 600:
 		walk.clear()
-	_place_scene(g, me)
+	_place_scene(g, me, dt)
 
 func _walk_update(id: int, pos: Vector2, dt: float) -> void:
 	if not walk.has(id):
 		walk[id] = [randf() * 6.0, pos, 0.0]
 	var st: Array = walk[id]
+	if st.size() < 4:
+		st.append(0.0)
 	var d: float = pos.distance_to(st[1])
 	if d < 1.0:
 		st[0] += d * 6.5
 	st[2] = st[2] * 0.85 + (d / dt if dt > 0.0 else 0.0) * 0.15
 	st[1] = pos
+	# сила шага плавно, без щелчка «идёт/стоит»
+	var tgt := clampf((st[2] - 0.12) / 0.5, 0.0, 1.0)
+	st[3] = move_toward(st[3], tgt, dt * 7.0)
 
 ## Видимость лучами из глаз игрока
 func _compute_vis(g: GameState, me: GameState.Player) -> void:
@@ -452,7 +461,7 @@ func _vis_at(p: Vector2) -> float:
 	var iz := floori(p.y)
 	return vis[world.idx(ix, iz)] if world.inside(ix, iz) else 0.0
 
-func _place_scene(g: GameState, me: GameState.Player) -> void:
+func _place_scene(g: GameState, me: GameState.Player, dt: float) -> void:
 	var dark := g.darkness()
 	var hh := g.hour_f()
 	# ---------- камера ----------
@@ -549,13 +558,15 @@ func _place_scene(g: GameState, me: GameState.Player) -> void:
 			add_child(m)
 			players[p.id] = m
 		var cm: CharModel = players[p.id]
-		var st: Array = walk.get(p.id, [0.0, p.rpos, 0.0])
+		var st: Array = walk.get(p.id, [0.0, p.rpos, 0.0, 0.0])
 		cm.position = Vector3(p.rpos.x, _ground_at(p.rpos.x, p.rpos.y), p.rpos.y)
-		cm.rotation.y = atan2(p.face.x, p.face.y)
-		cm.pose(st[0], 1.0 if st[2] > 0.3 else 0.0, p.attack_anim, p.weapon_id(), false, p.sneaking, false, p.climb)
+		cm.rotation.y = atan2(p.rface.x, p.rface.y)
+		cm.atk_kind = p.atk_kind
+		cm.pose(st[0], st[3] if st.size() > 3 else 0.0, p.attack_anim, p.weapon_id(), false, p.sneaking, false, p.rclimb)
 	for id in players.keys():
 		if not alive.has(id):
-			players[id].queue_free()
+			# погиб — модель ждёт свой труп и падает, а не исчезает
+			dying[-1 - id] = [players[id], 0.8]
 			players.erase(id)
 	# ---------- зомби ----------
 	var seen := {}
@@ -565,7 +576,7 @@ func _place_scene(g: GameState, me: GameState.Player) -> void:
 			continue
 		seen[z.id] = true
 		var v := _vis_at(z.rpos)
-		if v < 0.2 and z.climb < 0.0:
+		if v < 0.2 and z.rclimb < 0.0:
 			# не видно: модель прячем, а не удаляем — без пересоздания каждые полсекунды
 			if zombies.has(z.id):
 				zombies[z.id].visible = false
@@ -577,16 +588,36 @@ func _place_scene(g: GameState, me: GameState.Player) -> void:
 			zombies[z.id] = zm
 		var m2: CharModel = zombies[z.id]
 		m2.visible = true
-		var st2: Array = walk.get(100000 + z.id, [0.0, z.rpos, 0.0])
+		var st2: Array = walk.get(100000 + z.id, [0.0, z.rpos, 0.0, 0.0])
 		m2.position = Vector3(z.rpos.x, _ground_at(z.rpos.x, z.rpos.y), z.rpos.y)
-		m2.rotation.y = atan2(z.face.x, z.face.y)
+		m2.rotation.y = atan2(z.rface.x, z.rface.y)
 		var s := 0.95 + (z.id % 5) * 0.025
 		m2.scale = Vector3(s, s, s)
-		m2.pose(st2[0], 0.75 if st2[2] > 0.15 else 0.15, 0.0, "", z.down > 0.0, false, z.chase > 0.0, z.climb)
+		# падение и подъём — плавно
+		var down_t := 1.0 if z.down > 0.0 else 0.0
+		var fb: float = zfall.get(z.id, down_t)
+		fb = move_toward(fb, down_t, dt / (0.45 if down_t > fb else 0.8))
+		zfall[z.id] = fb
+		m2.fall = fb
+		var amp: float = st2[3] if st2.size() > 3 else 0.0
+		m2.pose(st2[0], 0.15 + 0.6 * amp, 0.0, "", fb >= 0.999, false, z.chase > 0.0, z.rclimb)
+	var alive_z := {}
+	for z: GameState.Zombie in g.zombies:
+		alive_z[z.id] = true
 	for id in zombies.keys():
 		if not seen.has(id):
-			zombies[id].queue_free()
+			if not alive_z.has(id) and absf(zombies[id].position.x - t.x) < VIS_R and absf(zombies[id].position.z - t.z) < VIS_R:
+				# зомби погиб: модель ждёт свой труп, чтобы упасть из той же позы
+				dying[id] = [zombies[id], 0.8]
+			else:
+				zombies[id].queue_free()
 			zombies.erase(id)
+			zfall.erase(id)
+	for id in dying.keys():
+		dying[id][1] -= dt
+		if dying[id][1] <= 0.0:
+			dying[id][0].queue_free()
+			dying.erase(id)
 	# ---------- трупы ----------
 	var cl: Array = g.corpses
 	if cl.size() != corpse_count or (cl.size() > 0 and cl[cl.size() - 1] != corpse_last):
@@ -600,21 +631,49 @@ func _place_scene(g: GameState, me: GameState.Player) -> void:
 			if not want.has(k):
 				corpse_map[k].queue_free()
 				corpse_map.erase(k)
+		var first := corpse_count_seen < 0
+		corpse_count_seen = 1
 		for k in want:
 			if corpse_map.has(k):
 				continue
 			var c: Array = want[k]
 			var seed := int(c[0] * 13 + c[1] * 7) & 0x7FFFFFFF
-			var cm2 := CharModel.new()
-			cm2.setup(_zcols(seed) if c[2] else _pcols(0), c[2], false, false, true)
-			add_child(cm2)
+			var ang: float = c[3] if c.size() > 3 else deg_to_rad(seed % 360)
+			var who: int = int(c[4]) if c.size() > 4 else -100000
+			var cm2: CharModel
+			var start := 1.0 if first else 0.0
+			if dying.has(who):
+				# та же модель, что только что стояла/лежала — падает из своей позы
+				cm2 = dying[who][0]
+				start = maxf(0.0, cm2.fall)
+				dying.erase(who)
+				cm2.make_corpse()
+			else:
+				cm2 = CharModel.new()
+				var zc := who if who >= 0 else seed
+				cm2.setup(_zcols(zc) if c[2] else _pcols(-1 - who if who < 0 and who > -100 else 0), c[2], c[2] and zc % 2 == 0, false, true)
+				add_child(cm2)
+			cm2.visible = true
 			cm2.position = Vector3(c[0], _ground_at(c[0], c[1]) + 0.004, c[1])
-			cm2.rotation.y = deg_to_rad(seed % 360)
-			cm2.pose(0, 0, 0, "", true, false, false, -1.0)
+			cm2.rotation.y = ang
+			cm2.atk_kind = 0
+			cm2.fall = start
+			cm2.pose(0, 0, 0, "", start >= 1.0, false, false, -1.0)
+			if start < 1.0:
+				corpse_anim[k] = cm2
 			corpse_map[k] = cm2
 			if blood.size() < 220:
 				blood.append([c[0], _ground_at(c[0], c[1]) + 0.004, c[1] + 0.3, deg_to_rad(seed % 360), 1.0])
 				blood_dirty = true
+	for k in corpse_anim.keys():
+		var ca: CharModel = corpse_anim[k]
+		if not is_instance_valid(ca):
+			corpse_anim.erase(k)
+			continue
+		ca.fall = minf(1.0, ca.fall + dt / 0.55)
+		ca.pose(0, 0, 0, "", ca.fall >= 1.0, false, false, -1.0)
+		if ca.fall >= 1.0:
+			corpse_anim.erase(k)
 	# ---------- кровь ----------
 	if blood_dirty:
 		blood_dirty = false

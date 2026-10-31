@@ -39,6 +39,13 @@ class Player:
 	var force_seq := 0         # хост сдвинул игрока сам — клиент должен принять позицию
 	var move_budget := 1.0     # сколько клеток друг может пройти до следующего пакета
 	var last_in_ms := 0
+	var atk_seq := 0           # номер удара: по нему второй телефон запускает анимацию ровно один раз
+	var atk_kind := 0          # 0 — оружие/кулак, 1 — добивание ногой
+	var stomp_t := -1.0        # до удара стопой о землю
+	var stomp_z := -1
+	var snaps: Array = []      # снимки [время, x, y, fx, fy, climb] для плавной отрисовки чужого игрока
+	var rface := Vector2(1, 0)
+	var rclimb := -1.0
 	func _init(pid: int = 0) -> void:
 		id = pid
 	func weapon() -> Dictionary: return Items.def(eq if eq != "" else "fists")
@@ -52,6 +59,29 @@ class Player:
 		return ok
 	func bleeding() -> bool: return body.bleeding()
 	func ta_progress() -> float: return clampf(ta_time / ta_dur, 0.0, 1.0) if ta_dur > 0.0 else 0.0
+
+## Часы отправителя: какое мгновение его мира показывать сейчас, чтобы всегда было два снимка для плавного перехода
+class NetClock:
+	var off := INF        # (наше время − время отправителя) для самого быстрого пакета
+	var jit := 25.0       # разброс прихода пакетов, мс
+	var gap := 50.0       # как часто отправитель шлёт снимки (на слабом телефоне — реже)
+	var last_ts := -1.0
+	func sample(ts: float, now: float) -> void:
+		if last_ts >= 0.0 and ts > last_ts:
+			var g := ts - last_ts
+			gap = lerpf(gap, g, 0.3 if g > gap else 0.05)
+		last_ts = maxf(last_ts, ts)
+		var s := now - ts
+		if off == INF or s < off:
+			off = s
+		else:
+			off += (s - off) * 0.003       # медленно следуем за уходом часов
+		var dev := s - off
+		jit = lerpf(jit, dev, 0.15 if dev > jit else 0.01)
+	func delay() -> float:
+		return clampf(maxf(60.0, gap * 1.3) + jit * 1.6, 75.0, 450.0)
+	func render_time(now: float) -> float:
+		return 0.0 if off == INF else now - off - delay()
 
 class Zombie:
 	var id := 0
@@ -73,6 +103,9 @@ class Zombie:
 	var cl_from := Vector2.ZERO
 	var cl_to := Vector2.ZERO
 	var rpos := Vector2.ZERO
+	var snaps: Array = []
+	var rface := Vector2(0, 1)
+	var rclimb := -1.0
 	func _init(zid: int = 0) -> void:
 		id = zid
 	func skin() -> int: return id % 6
@@ -188,6 +221,7 @@ func join_player(uid: String, pname: String) -> Player:
 	p.name = pname
 	p.move = Vector2.ZERO
 	p.force_seq += 1
+	p.snaps.clear()
 	return p
 
 func _spawn_friend(pid: int) -> Player:
@@ -262,7 +296,7 @@ func update(dt: float) -> void:
 			if z.climb >= 0.0 and world.climb_occ.get(z.cl_cell, -999) == z.id:
 				world.climb_occ.erase(z.cl_cell)
 			zombies.remove_at(i)
-			corpses.append([z.pos.x, z.pos.y, true])
+			corpses.append([z.pos.x, z.pos.y, true, snappedf(atan2(z.face.x, z.face.y), 0.01), z.id])
 			if corpses.size() > 80:
 				corpses.pop_front()
 		i -= 1
@@ -281,7 +315,81 @@ func _age_shots(dt: float) -> void:
 func tick_replica(dt: float) -> void:
 	_age_shots(dt)
 	for p in players:
-		p.attack_anim = maxf(0.0, p.attack_anim - dt * 4.0)
+		p.attack_anim = maxf(0.0, p.attack_anim - dt * anim_rate(p))
+		p.cooldown -= dt
+
+## Скорость анимации удара: добивание ногой дольше взмаха
+static func anim_rate(p: Player) -> float:
+	return 2.2 if p.atk_kind == 1 else 4.0
+
+## Каким будет удар: ногой по лежачему или оружием (одинаково считают хост и телефон друга)
+func attack_kind(p: Player) -> Array:
+	var w := p.weapon()
+	if w["kind"] == Items.Kind.GUN:
+		return [0, null]
+	var reach: float = w["range"] + ZOMBIE_R
+	var downed: Zombie = null
+	var dd := INF
+	for z: Zombie in zombies:
+		var d: float = z.pos.distance_to(p.pos)
+		if z.down > 0.0 and d < 1.2 and d < dd and _reachable(p, z):
+			dd = d
+			downed = z
+	for z: Zombie in zombies:
+		if z.down <= 0.0 and z.pos.distance_to(p.pos) < reach and _in_front(p, z):
+			return [0, null]
+	return [1, downed] if downed != null else [0, null]
+
+## Телефон друга: анимация своего удара сразу, не дожидаясь хоста
+func predict_attack(p: Player) -> void:
+	if p.dead or p.climb >= 0.0 or p.cooldown > 0.0:
+		return
+	var k := attack_kind(p)
+	p.cooldown = p.weapon()["cd"]
+	p.atk_kind = k[0]
+	p.attack_anim = 1.0
+	if k[1] != null:
+		p.face = (k[1].pos - p.pos).normalized()
+
+## Снимок для плавной отрисовки (время отправителя, мс)
+static func push_snap(e, ts: float, pos: Vector2, face: Vector2, climb: float) -> void:
+	var sn: Array = e.snaps
+	if sn.size() > 0 and ts <= sn[sn.size() - 1][0]:
+		return
+	sn.append([ts, pos.x, pos.y, face.x, face.y, climb])
+	if sn.size() > 30:
+		sn.pop_front()
+
+## Положение на момент t (время отправителя): между двумя снимками, без забегания вперёд
+static func sample_snaps(e, t: float) -> void:
+	var sn: Array = e.snaps
+	if sn.is_empty():
+		e.rpos = e.pos
+		e.rface = e.face
+		e.rclimb = e.climb
+		return
+	var last: Array = sn[sn.size() - 1]
+	if t >= last[0]:
+		e.rpos = Vector2(last[1], last[2])
+		e.rface = Vector2(last[3], last[4])
+		e.rclimb = last[5]
+		return
+	var i := sn.size() - 2
+	while i > 0 and sn[i][0] > t:
+		i -= 1
+	var a: Array = sn[i]
+	var b: Array = sn[i + 1]
+	var f := clampf((t - a[0]) / maxf(1.0, b[0] - a[0]), 0.0, 1.0)
+	var pa := Vector2(a[1], a[2])
+	var pb := Vector2(b[1], b[2])
+	e.rpos = pb if pa.distance_to(pb) > 3.0 else pa.lerp(pb, f)
+	var fa := Vector2(a[3], a[4])
+	var fb := Vector2(b[3], b[4])
+	e.rface = Vector2.from_angle(lerp_angle(fa.angle(), fb.angle(), f)) if fa.length() > 0.01 and fb.length() > 0.01 else fb
+	if a[5] >= 0.0 and b[5] >= 0.0:
+		e.rclimb = lerpf(a[5], b[5], f)
+	else:
+		e.rclimb = b[5] if f > 0.5 else a[5]
 
 func _cell_at(p: Vector2) -> int:
 	return world.idx(clampi(floori(p.x), 0, world.w - 1), clampi(floori(p.y), 0, world.h - 1))
@@ -332,7 +440,8 @@ func _update_player(p: Player, dt: float) -> void:
 	if p.dead or not p.connected:
 		return
 	p.cooldown -= dt
-	p.attack_anim = maxf(0.0, p.attack_anim - dt * 4.0)
+	p.attack_anim = maxf(0.0, p.attack_anim - dt * anim_rate(p))
+	_tick_stomp(p, dt)
 	var running := false
 	var mag := 0.0
 	if p.remote and p.climb >= 0.0:
@@ -503,7 +612,7 @@ func _finish_player(p: Player, dt: float, running: bool, mag: float) -> void:
 		if p.climb >= 0.0:
 			p.climb = -1.0
 			_release_climb(p)      # окно освобождается — иначе в него больше никто не пролезет
-		corpses.append([p.pos.x, p.pos.y, false])
+		corpses.append([p.pos.x, p.pos.y, false, snappedf(atan2(p.face.x, p.face.y), 0.01), -1 - p.id])
 		msg(p.id, "Ты погиб. Прожито дней: %d" % (day() - 1))
 
 func _move_circle(pos: Vector2, d: Vector2, r: float) -> Vector2:
@@ -848,6 +957,8 @@ func _attack(p: Player) -> void:
 	var w := p.weapon()
 	p.cooldown = w["cd"]
 	p.attack_anim = 1.0
+	p.atk_kind = 0
+	p.atk_seq = (p.atk_seq + 1) % 100000
 	if w["kind"] == Items.Kind.GUN:
 		if not p.take("ammo", 1):
 			msg(p.id, "Нет патронов")
@@ -889,9 +1000,12 @@ func _attack(p: Player) -> void:
 		if z.down <= 0.0 and z.pos.distance_to(p.pos) < reach and _in_front(p, z):
 			standing_front = true
 	if downed != null and not standing_front:
+		# добивание ногой: замах, урон в момент удара стопой
 		p.face = (downed.pos - p.pos).normalized()
-		_hit_zombie(p, downed, maxf(28.0, w["dmg"] * 1.6) * p.body.arm_penalty())
-		noise(p.pos, w["noise"], p)
+		p.atk_kind = 1
+		p.stomp_t = STOMP_HIT
+		p.stomp_z = downed.id
+		p.cooldown = maxf(p.cooldown, 0.5)
 		return
 	var tz: Zombie = null
 	var bd := INF
@@ -917,6 +1031,23 @@ func _attack(p: Player) -> void:
 			tz.down = 2.2 + rnd.randf() * 1.5
 			tz.stagger = 0.0
 	noise(p.pos, w["noise"], p)
+
+const STOMP_HIT := 0.24     # через сколько секунд после начала нога бьёт в землю
+
+func _tick_stomp(p: Player, dt: float) -> void:
+	if p.stomp_t < 0.0:
+		return
+	p.stomp_t -= dt
+	if p.stomp_t > 0.0:
+		return
+	p.stomp_t = -1.0
+	for z: Zombie in zombies:
+		if z.id == p.stomp_z and z.hp > 0.0 and z.pos.distance_to(p.pos) < 1.5:
+			var dmg := maxf(28.0, p.weapon()["dmg"] * 1.6) * p.body.leg_penalty()
+			_hit_zombie(p, z, dmg)
+			z.down = maxf(z.down, 0.6)
+			noise(p.pos, 3.0, p)
+			break
 
 func _in_front(p: Player, z: Zombie) -> bool:
 	var d: float = z.pos.distance_to(p.pos)
@@ -1292,7 +1423,8 @@ func load_data(o: Dictionary) -> void:
 		players.append(p)
 	corpses.clear()
 	for c in o.get("corpses", []):
-		corpses.append([float(c[0]), float(c[1]), bool(c[2])])
+		var ang := float(c[3]) if c.size() > 3 else deg_to_rad((int(float(c[0]) * 13 + float(c[1]) * 7) & 0x7FFFFFFF) % 360)
+		corpses.append([float(c[0]), float(c[1]), bool(c[2]), ang, int(c[4]) if c.size() > 4 else -100000])
 
 # ================== СЕТЕВЫЕ СНИМКИ ==================
 ## Частый лёгкий снимок (ненадёжный канал): позиции рядом с другом
@@ -1303,13 +1435,13 @@ func state_for(pid: int) -> Dictionary:
 	for p in players:
 		if not p.connected and p.id != 0:
 			continue
-		ps.append_array([p.id, p.pos.x, p.pos.y, p.face.x, p.face.y, p.attack_anim, 1.0 if p.sneaking else 0.0, p.climb, p.force_seq, p.hp, p.stamina])
+		ps.append_array([p.id, p.pos.x, p.pos.y, p.face.x, p.face.y, float(p.atk_seq * 2 + p.atk_kind), 1.0 if p.sneaking else 0.0, p.climb, p.force_seq, p.hp, p.stamina])
 	var zs := PackedFloat32Array()
 	for z in zombies:
 		if absf(z.pos.x - c.x) > 30.0 or absf(z.pos.y - c.y) > 30.0:
 			continue
 		zs.append_array([z.id, z.pos.x, z.pos.y, z.face.x, z.face.y, (1.0 if z.chase > 0.0 else 0.0) + (2.0 if z.down > 0.0 else 0.0), z.climb])
-	var o := {"t": "st", "time": time, "p": ps, "z": zs}
+	var o := {"t": "st", "time": time, "ts": Time.get_ticks_msec(), "p": ps, "z": zs}
 	if shots.size() > 0:
 		o["sh"] = shots.duplicate(true)
 	return o
@@ -1353,6 +1485,7 @@ func pop_messages(pid: int) -> Array:
 ## Клиент: принять лёгкий снимок. Свою позицию не трогаем — её считает этот телефон
 func apply_state(o: Dictionary, local_pid: int) -> void:
 	time = o["time"]
+	var ts := float(o.get("ts", 0))
 	var ps: PackedFloat32Array = o["p"]
 	var i := 0
 	while i + 10 < ps.size():
@@ -1367,21 +1500,29 @@ func apply_state(o: Dictionary, local_pid: int) -> void:
 		p.hp = ps[i + 9]
 		p.stamina = ps[i + 10]
 		var fs := int(ps[i + 8])
-		if not (pid == local_pid and fs == p.force_seq):
+		var ak := int(ps[i + 5])
+		var seq := ak >> 1
+		if seq != p.atk_seq:
+			p.atk_seq = seq
+			if pid != local_pid:
+				# новый удар: анимация с начала, один раз
+				p.atk_kind = ak & 1
+				p.attack_anim = 1.0
+		if pid != local_pid:
 			p.force_seq = fs
 			p.pos = Vector2(ps[i + 1], ps[i + 2])
 			p.face = Vector2(ps[i + 3], ps[i + 4])
-			p.attack_anim = ps[i + 5]
 			p.sneaking = ps[i + 6] > 0.5
 			p.climb = ps[i + 7]
-			if pid == local_pid:
-				p.rpos = p.pos
-		elif pid == local_pid:
-			pass
+			push_snap(p, ts, p.pos, p.face, p.climb)
+		elif fs != p.force_seq:
+			# хост сдвинул нас сам (дверь, откат)
+			p.force_seq = fs
+			p.pos = Vector2(ps[i + 1], ps[i + 2])
+			p.face = Vector2(ps[i + 3], ps[i + 4])
+			p.climb = ps[i + 7]
+			p.rpos = p.pos
 		i += 11
-	if local_pid >= 0:
-		# атака своего персонажа приходит с хоста
-		pass
 	var by_id := {}
 	for z in zombies:
 		by_id[z.id] = z
@@ -1400,6 +1541,7 @@ func apply_state(o: Dictionary, local_pid: int) -> void:
 		z.chase = 1.0 if fl & 1 else 0.0
 		z.down = 1.0 if fl & 2 else 0.0
 		z.climb = zs[k + 6]
+		push_snap(z, ts, z.pos, z.face, z.climb)
 		next.append(z)
 		k += 7
 	zombies = next
@@ -1421,15 +1563,27 @@ func apply_events(o: Dictionary, local_pid: int) -> void:
 			p.pos = Vector2(e["x"], e["y"])
 			p.rpos = p.pos
 			players.append(p)
+		var fresh := p.snaps.is_empty() and pid != local_pid
 		var keep_pos := p.pos
 		var keep_face := p.face
 		var keep_climb := p.climb
 		var keep_fs := p.force_seq
+		var keep_aa := p.attack_anim
+		var keep_sn := p.sneaking
+		var keep_from := p.cl_from
+		var keep_to := p.cl_to
 		player_from(e, p)
-		if pid == local_pid and int(e.get("fs", 0)) == keep_fs:
+		# движение и удары приходят быстрым каналом: надёжный пакет старше и не должен их откатывать
+		p.attack_anim = keep_aa
+		if not fresh and not (pid == local_pid and int(e.get("fs", 0)) != keep_fs):
 			p.pos = keep_pos
 			p.face = keep_face
 			p.climb = keep_climb
+			p.force_seq = keep_fs
+			p.sneaking = keep_sn
+			if pid == local_pid:
+				p.cl_from = keep_from
+				p.cl_to = keep_to
 	for e in o.get("tc", []):
 		var i := int(e[0])
 		var nt := int(e[1])

@@ -37,6 +37,10 @@ func _ready() -> void:
 	test_bullet_window()
 	test_revive_host()
 	test_remote_no_false_rollback()
+	test_smooth_remote()
+	test_stomp()
+	test_attack_sync()
+	test_corpse_facing()
 	print("\nИТОГО: %d прошло, %d ошибок" % [passes, fails])
 	get_tree().quit()
 
@@ -496,3 +500,114 @@ func test_remote_no_false_rollback() -> void:
 					cf.pos = f.pos
 					cf.force_seq = f.force_seq
 	check("Сеть: честного друга не откатывает у стен и углов (%d маршрутов)" % routes, rollbacks == 0, "%d ложных откатов" % rollbacks)
+
+
+## Друг бежит и останавливается; пакеты 20 раз в секунду приходят с разбросом 20–150 мс (плохой Wi‑Fi).
+## Меряем, как его видит другой телефон: замирания посреди бега, рывки и «пробег» после остановки.
+func _sim_remote(smooth: bool) -> Array:
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 5
+	var e := GameState.Player.new(1)
+	var clk := GameState.NetClock.new()
+	var queue := []                # [время прихода, время отправки, позиция]
+	var true_pos := Vector2(10, 10)
+	for k in 60:                   # 3 секунды бега, потом 2 секунды стоит
+		var ts := k * 50.0
+		if ts < 3000.0:
+			true_pos = Vector2(10 + 3.9 * ts / 1000.0, 10)
+		queue.append([ts + rng.randf_range(20.0, 150.0), ts, true_pos])
+	for k in range(60, 100):
+		queue.append([k * 50.0 + rng.randf_range(20.0, 150.0), k * 50.0, true_pos])
+	queue.sort_custom(func(a, b): return a[0] < b[0])
+	var frames := 0
+	var frozen := 0
+	var max_step := 0.0
+	var prev := Vector2(10, 10)
+	var stop_frame_pos := Vector2.ZERO
+	var overshoot := 0.0
+	var qi := 0
+	var now := 0.0
+	while now < 5000.0:
+		now += 1000.0 / 60.0
+		while qi < queue.size() and queue[qi][0] <= now:
+			var q: Array = queue[qi]
+			e.pos = q[2]
+			if smooth:
+				clk.sample(q[1], now)
+				GameState.push_snap(e, q[1], q[2], Vector2(1, 0), -1.0)
+			qi += 1
+		if smooth:
+			GameState.sample_snaps(e, clk.render_time(now))
+		else:
+			e.rpos = e.pos              # как было: позиция ставится в момент прихода пакета
+		var step := e.rpos.distance_to(prev)
+		if now > 400.0 and now < 2900.0:
+			frames += 1
+			if step < 0.0001:
+				frozen += 1
+			max_step = maxf(max_step, step)
+		overshoot = maxf(overshoot, e.rpos.x - true_pos.x)
+		prev = e.rpos
+	return [frozen * 100.0 / frames, max_step, overshoot, e.rpos.distance_to(true_pos)]
+
+func test_smooth_remote() -> void:
+	var old := _sim_remote(false)
+	var neu := _sim_remote(true)
+	print("        было: замирал в %.0f%% кадров бега, рывок до %.2f клетки; стало: %.0f%%, рывок до %.2f, пробег %.2f, итог в %.2f от места остановки" % [old[0], old[1], neu[0], neu[1], neu[2], neu[3]])
+	check("Сеть: бегущий друг не замирает и не дёргается на плохом Wi‑Fi", neu[0] < 2.0 and neu[1] < 0.12, "замирал %.0f%%, рывок %.2f" % [neu[0], neu[1]])
+	check("Сеть: остановился — стоит на месте, без пробега вперёд", neu[2] < 0.01 and neu[3] < 0.01, "пробег %.2f" % neu[2])
+
+func test_stomp() -> void:
+	var g := _game()
+	var p: GameState.Player = g.players[0]
+	var z := GameState.Zombie.new(9001)
+	z.pos = p.pos + Vector2(0.7, 0)
+	if g.world.circle_blocked(z.pos.x, z.pos.y, 0.3):
+		z.pos = p.pos + Vector2(-0.7, 0)
+	z.hp = 500.0
+	z.down = 3.0
+	g.zombies.append(z)
+	p.face = Vector2(0, 1)
+	g.actions.append([0, {"a": "attack"}])
+	g.update(0.016)
+	var kind := p.atk_kind
+	var hp_at_start := z.hp
+	for i in 25:
+		g.update(0.016)
+	check("Добивание лежачего — удар ногой, урон в момент удара стопой", kind == 1 and hp_at_start == 500.0 and z.hp < 500.0 and p.face.dot((z.pos - p.pos).normalized()) > 0.9,
+		"вид %d, хп в начале %.0f, после %.0f" % [kind, hp_at_start, z.hp])
+
+## Удар хоста виден на втором телефоне ровно один раз и с начала, даже если пакеты теряются
+func test_attack_sync() -> void:
+	var g := _game()
+	var p: GameState.Player = g.players[0]
+	var c := GameState.new(g.seed)
+	c.is_replica = true
+	c.load_data(JSON.parse_string(JSON.stringify(g.to_data())))
+	g.actions.append([0, {"a": "attack"}])
+	g.update(0.016)
+	g.update(0.016)
+	g.update(0.016)                # первые пакеты потерялись — анимация на хосте уже идёт
+	var st := g.state_for(1)
+	c.apply_state(st, 1)
+	var cp := c.player(0)
+	var first := cp.attack_anim
+	c.tick_replica(0.1)
+	c.apply_state(g.state_for(1), 1)   # повтор того же удара не должен перезапускать анимацию
+	check("Сеть: удар второго игрока проигрывается с начала и один раз", first == 1.0 and cp.attack_anim < 1.0, "в начале %.2f, после повтора %.2f" % [first, cp.attack_anim])
+	var ev := g.events_for(1, true, false)
+	cp.pos = Vector2(1, 1)
+	c.player(0).snaps.append([0.0, 1.0, 1.0, 1.0, 0.0, -1.0])
+	c.apply_events(JSON.parse_string(JSON.stringify(ev)), 1)
+	check("Сеть: надёжный пакет не откатывает позицию и удар второго игрока", cp.pos == Vector2(1, 1), "позиция откатилась на %s" % cp.pos)
+
+func test_corpse_facing() -> void:
+	var g := _game()
+	var z := GameState.Zombie.new(77)
+	z.pos = g.players[0].pos + Vector2(5, 0)
+	z.face = Vector2(0, -1)
+	z.hp = -1.0
+	g.zombies.append(z)
+	g.update(0.016)
+	var c: Array = g.corpses[g.corpses.size() - 1]
+	check("Труп лежит в ту же сторону, куда смотрел зомби, и знает, чей он", c.size() == 5 and absf(c[3] - atan2(z.face.x, z.face.y)) < 0.02 and int(c[4]) == 77, str(c))

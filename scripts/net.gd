@@ -31,6 +31,7 @@ var servers := {}                # ip → {info, seen}
 func _ready() -> void:
 	_load_profile()
 	multiplayer.peer_connected.connect(_on_peer_connected)
+	(multiplayer as SceneMultiplayer).peer_packet.connect(_on_bytes)
 	multiplayer.peer_disconnected.connect(_on_peer_disconnected)
 	multiplayer.connected_to_server.connect(_on_connected)
 	multiplayer.connection_failed.connect(func(): status = "Не удалось подключиться"; _lost())
@@ -130,17 +131,30 @@ func send(msg: Dictionary) -> void:
 	if connected:
 		_recv_rel.rpc_id(_target(), msg)
 
-## Быстро, без гарантии: позиции и ввод. Старые пакеты отбрасываются
+## Позиции и ввод 20 раз в секунду — по своему каналу, чтобы не ждать крупные события
+var n_fast_out := 0
+var n_fast_in := 0
+
 func send_fast(msg: Dictionary) -> void:
 	if connected:
-		_recv_fast.rpc_id(_target(), msg)
+		n_fast_out += 1
+		# Отдельный надёжный канал 1. «Ненадёжный» режим ENet при любой задержке включает свой регулятор
+		# и выбрасывает позиции сериями почти по секунде — друг замирал и потом прыгал.
+		# Для двоих в одной Wi‑Fi надёжный канал проще: всё доходит по порядку, а случайную задержку сглаживает буфер отрисовки.
+		(multiplayer as SceneMultiplayer).send_bytes(var_to_bytes(msg), _target(), MultiplayerPeer.TRANSFER_MODE_RELIABLE, 1)
+
+func _on_bytes(id: int, data: PackedByteArray) -> void:
+	if id != _target():
+		return
+	var m = bytes_to_var(data)       # без объектов — безопасно
+	if m is Dictionary:
+		n_fast_in += 1
+		inbox.append(m)
 
 @rpc("any_peer", "call_remote", "reliable", 0)
 func _recv_rel(msg: Dictionary) -> void:
-	inbox.append(msg)
-
-@rpc("any_peer", "call_remote", "unreliable_ordered", 1)
-func _recv_fast(msg: Dictionary) -> void:
+	if multiplayer.get_remote_sender_id() != _target():
+		return
 	inbox.append(msg)
 
 # ================== ПОИСК МИРОВ ==================

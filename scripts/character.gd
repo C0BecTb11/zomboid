@@ -36,6 +36,8 @@ var eyes: MeshInstance3D
 var weapon_mi: MeshInstance3D
 var cur_weapon := ""
 var zombie := false
+var fall := -1.0      # 0..1 — падение на спину (0 стоит, 1 лежит); -1 — брать из lying
+var atk_kind := 0     # 1 — добивание ногой
 
 static func _materials() -> void:
 	if _mat != null:
@@ -57,6 +59,13 @@ static func _global(bi: int) -> Vector3:
 		o += BONES[i][2]
 		i = BONES[i][1]
 	return o
+
+## Модель зомби становится трупом (тот же меш — без скачка позы)
+func make_corpse() -> void:
+	if mi != null:
+		mi.material_override = _mat_corpse
+	if eyes != null:
+		eyes.visible = false
 
 func setup(cols: Array, is_zombie: bool, stain: bool, long_hair: bool, corpse: bool = false) -> void:
 	_materials()
@@ -217,25 +226,44 @@ func pose(phase: float, moving: float, attack: float, weapon_id: String, lying: 
 	if weapon_mi != null and cur_weapon != weapon_id:
 		cur_weapon = weapon_id
 		weapon_mi.mesh = _weapon_mesh(weapon_id) if holding else null
+	var ly := fall if fall >= 0.0 else (1.0 if lying else 0.0)
+	if ly > 0.0:
+		cl = false
+		arc = 0.0
+	lying = ly >= 0.999
 	if eyes != null:
-		eyes.visible = angry and not lying
+		eyes.visible = angry and ly < 0.5
+	# добивание ногой: u 0→1 за время удара
+	var stomp := atk_kind == 1 and attack > 0.001 and not zombie and ly <= 0.0 and not cl
+	var u := 1.0 - attack
+	var lift := 0.0      # колено вверх (замах)
+	var drive := 0.0     # нога вниз в тело
+	if stomp:
+		lift = smoothstep(0.0, 0.42, u) * (1.0 - smoothstep(0.46, 0.56, u))
+		drive = smoothstep(0.46, 0.56, u) * (1.0 - smoothstep(0.78, 1.0, u))
+		moving *= 0.2
 	var sw := sin(phase) * 28.0 * moving
 	var lean := 3.0 + moving * 4.0
 	if cl:
 		lean = arc * (85.0 if zombie else 62.0)
-	elif lying:
-		lean = 0.0
 	elif zombie:
 		lean = 13.0
 	elif sneak:
 		lean = 22.0
-	var crouch := 0.12 if (sneak and not lying and not cl) else 0.0
-	# корень: лёжа / подъём при перелезании / присед
-	if lying:
-		skel.set_bone_pose_position(B.ROOT, Vector3(0, 0.13, 0.75))
-		_rot(B.ROOT, -90)
+	if stomp:
+		lean = lean - lift * 8.0 + drive * 16.0
+	lean = lerpf(lean, 0.0, ly)
+	var crouch := 0.12 if (sneak and not cl) else 0.0
+	crouch = crouch * (1.0 - ly) + drive * 0.06
+	# корень: падение и лёжа / подъём при перелезании / присед
+	if ly > 0.0:
+		var e := ly * ly                     # падает с ускорением
+		var sl := smoothstep(0.0, 1.0, ly)
+		skel.set_bone_pose_position(B.ROOT, Vector3(0, 0.13 * sl + 0.12 * sin(PI * ly), 0.75 * sl))
+		_rot(B.ROOT, -90.0 * e)
 	else:
-		skel.set_bone_pose_position(B.ROOT, Vector3(0, (arc * (0.62 if zombie else 0.55) if cl else 0.0) - crouch, 0))
+		# при добивании корпус подаётся вперёд, нога достаёт до тела
+		skel.set_bone_pose_position(B.ROOT, Vector3(0, (arc * (0.62 if zombie else 0.55) if cl else 0.0) - crouch, 0.2 * drive + 0.05 * lift))
 		_rot(B.ROOT, 0)
 	# ноги
 	var legs := [[B.THIGH_L, 1.0], [B.THIGH_R, -1.0]]
@@ -254,14 +282,24 @@ func pose(phase: float, moving: float, attack: float, weapon_id: String, lying: 
 			var k := sin(PI * minf(cp * 1.6, 1.0)) if lead else sin(PI * clampf(cp * 1.6 - 0.6, 0.0, 1.0))
 			thigh = -75.0 * k - arc * 20.0
 			knee = -thigh * 0.9
-		if lying:
-			thigh = s * 4.0
-			knee = 4.0
+		if stomp:
+			if s < 0.0:
+				# правая: колено к груди, затем удар стопой вниз-вперёд
+				thigh = lerpf(-5.0, -82.0, lift)
+				knee = lerpf(knee, 95.0, lift)
+				thigh = lerpf(thigh, -38.0, drive)
+				knee = lerpf(knee, 6.0, drive)
+			else:
+				thigh = 8.0 * lift + 6.0 * drive
+				knee = 14.0 * lift + 22.0 * drive
+		if ly > 0.0:
+			thigh = lerpf(thigh, s * 4.0, ly) - 30.0 * sin(PI * ly)
+			knee = lerpf(knee, 4.0, ly) + 45.0 * sin(PI * ly)
 		_rot(bi, thigh, s * 2.0)
 		_rot(bi + 1, knee)
 		_rot(bi + 2, -knee * 0.4)
 	# туловище и голова
-	_rot(B.SPINE, lean, (sin(phase * 0.5) * 5.0 + 3.0) if (zombie and not lying) else 0.0)
+	_rot(B.SPINE, lean, ((sin(phase * 0.5) * 5.0 + 3.0) * (1.0 - ly)) if zombie else 0.0)
 	if zombie:
 		_rot(B.HEAD, 10.0, sin(phase * 0.7) * 8.0 + 14.0, true)
 	else:
@@ -277,6 +315,12 @@ func pose(phase: float, moving: float, attack: float, weapon_id: String, lying: 
 		if lying:
 			sh = -170.0 + s2 * 8.0
 			el = -5.0
+		elif stomp:
+			# руки в стороны для равновесия
+			var bal := maxf(lift, drive)
+			sh = -18.0 - 22.0 * bal
+			el = -25.0 - 20.0 * bal
+			side = s2 * (8.0 + 30.0 * bal)
 		elif cl:
 			sh = -70.0 - arc * 30.0 + s2 * 6.0
 			el = -15.0
@@ -297,5 +341,10 @@ func pose(phase: float, moving: float, attack: float, weapon_id: String, lying: 
 		else:
 			sh = sw * s2 * 0.9 + (-20.0 if sneak else 0.0)
 			el = -12.0 - moving * 10.0
+		if ly > 0.0 and not lying:
+			# взмах руками при падении
+			sh = lerpf(sh, -170.0 + s2 * 8.0, ly) - 40.0 * sin(PI * ly)
+			el = lerpf(el, -5.0, ly)
+			side = lerpf(side, s2 * 30.0, sin(PI * ly))
 		_rot(bi2, sh, side)
 		_rot(bi2 + 1, el)

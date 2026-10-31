@@ -5,6 +5,7 @@ var screen: GameScreen
 var menu: Control
 var shot := ""
 var shot_frames := 0
+var shot_list: Array = []      # несколько кадров подряд: --shots=40,44,48
 var ip_edit: LineEdit
 
 func _ready() -> void:
@@ -14,6 +15,9 @@ func _ready() -> void:
 			demo = a.substr(7)
 		elif a.begins_with("--shot="):
 			shot = a.substr(7)
+		elif a.begins_with("--shots="):
+			for f in a.substr(8).split(","):
+				shot_list.append(int(f))
 	get_tree().set_auto_accept_quit(false)
 	if "--audit" in OS.get_cmdline_user_args():
 		add_child(load("res://scripts/audit_test.gd").new())
@@ -46,7 +50,25 @@ func _process(_dt: float) -> void:
 	_process_menu()
 	if shot != "":
 		shot_frames += 1
-		if shot_frames == 45:
+		if screen != null and screen.demo in ["stomp", "fall"] and shot_frames == 40:
+			screen.act({"a": "attack"})
+		# кадры позы удара ногой без зависимости от FPS: --demo=stomp_pose
+		if screen != null and screen.demo == "stomp_pose" and screen.game != null and shot_list.size() > 0:
+			screen.game.freeze = true
+			var me: GameState.Player = screen.game.players[0]
+			me.atk_kind = 1
+			var idx := 0
+			for f in shot_list:
+				if shot_frames >= f:
+					idx += 1
+			me.attack_anim = 1.0 - clampf(float(idx) / shot_list.size(), 0.0, 1.0)
+		if shot_list.size() > 0:
+			if shot_frames in shot_list:
+				await RenderingServer.frame_post_draw
+				get_viewport().get_texture().get_image().save_png(shot.replace(".png", "_%03d.png" % shot_frames))
+			if shot_frames > shot_list.max():
+				get_tree().quit()
+		elif shot_frames == 45:
 			await RenderingServer.frame_post_draw
 			get_viewport().get_texture().get_image().save_png(shot)
 			get_tree().quit()
