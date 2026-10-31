@@ -15,7 +15,7 @@ sleep 2
 adb shell dumpsys activity activities | grep -E "topResumedActivity" | tee shots/top.txt
 adb exec-out screencap -p > shots/android_menu.png
 adb shell wm size | tee -a shots/top.txt
-adb shell input tap 1170 470
+adb shell input tap 1170 734
 sleep 6
 adb exec-out screencap -p > shots/android_friends.png
 adb logcat -d -s godot:* AndroidRuntime:E > shots/android_log.txt
