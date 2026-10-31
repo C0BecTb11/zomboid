@@ -65,6 +65,10 @@ class WorldRenderer(ctx: Context, private val dp: Float) {
     private val pCut = Paint(Paint.ANTI_ALIAS_FLAG).apply { xfermode = PorterDuffXfermode(PorterDuff.Mode.DST_OUT) }
     private val pAdd = Paint(Paint.ANTI_ALIAS_FLAG).apply { xfermode = PorterDuffXfermode(PorterDuff.Mode.ADD) }
     private val pShade = Paint()
+    private var fogBmp: android.graphics.Bitmap? = null
+    private var fogPx = IntArray(0)
+    private val fogSrc = android.graphics.Rect()
+    private val pFog = Paint(Paint.FILTER_BITMAP_FLAG)
     /** Приглушённая «постапокалиптическая» палитра для земли */
     private val pGround = Paint(Paint.FILTER_BITMAP_FLAG).apply {
         val m = ColorMatrix(); m.setSaturation(0.62f)
@@ -342,12 +346,21 @@ class WorldRenderer(ctx: Context, private val dp: Float) {
             if (!spr.pivot(c, name, 32f, 32f, ts * (1.6f + (hv % 5) * 0.06f) / 64f)) { pFill.color = 0xFF2C5222.toInt(); c.drawCircle(0f, 0f, ts * 0.85f, pFill) }
             c.restore()
         }
-        // 7. туман: всё, что вне поля зрения, темнее
-        for (y in y0..y1) for (x in x0..x1) {
-            val v = vis[w.idx(x, y)]
-            if (v > 0.97f) continue
-            pTile.color = Color.argb(((1f - v) * 165).toInt(), 6, 8, 14)
-            c.drawRect(ox + x * ts, oy + y * ts, ox + (x + 1) * ts + 0.5f, oy + (y + 1) * ts + 0.5f, pTile)
+        // 7. туман: всё вне поля зрения темнее; маленький битмап с размытием даёт мягкие края
+        val fw = x1 - x0 + 1; val fh = y1 - y0 + 1
+        if (fw > 0 && fh > 0) {
+            if (fogBmp == null || fogBmp!!.width != fw || fogBmp!!.height != fh) {
+                fogBmp = android.graphics.Bitmap.createBitmap(fw, fh, android.graphics.Bitmap.Config.ARGB_8888); fogPx = IntArray(fw * fh)
+            }
+            for (y in y0..y1) for (x in x0..x1) {
+                val v = vis[w.idx(x, y)]
+                fogPx[(y - y0) * fw + (x - x0)] = Color.argb(((1f - v) * 170).toInt().coerceIn(0, 255), 6, 8, 14)
+            }
+            val bmp = fogBmp!!
+            bmp.setPixels(fogPx, 0, fw, 0, 0, fw, fh)
+            fogSrc.set(0, 0, fw, fh)
+            rect.set(ox + x0 * ts, oy + y0 * ts, ox + (x1 + 1) * ts, oy + (y1 + 1) * ts)
+            c.drawBitmap(bmp, fogSrc, rect, pFog)
         }
         // 8. крыши
         for ((bi, b) in w.buildings.withIndex()) {
