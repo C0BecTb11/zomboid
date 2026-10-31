@@ -1,0 +1,7 @@
+Starting: Intent { cmp=com.c0bectb11.zomboid/com.godot.game.GodotApp }
+Status: ok
+LaunchState: COLD
+Activity: com.c0bectb11.zomboid/com.godot.game.GodotApp
+TotalTime: 2991
+WaitTime: 3581
+Complete

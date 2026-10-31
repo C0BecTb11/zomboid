@@ -1,0 +1,2 @@
+    topResumedActivity=ActivityRecord{d6bd55f u0 com.c0bectb11.zomboid/com.godot.game.GodotApp t8}
+Physical size: 1080x2340
