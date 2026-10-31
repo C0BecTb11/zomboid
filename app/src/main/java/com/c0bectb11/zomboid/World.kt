@@ -39,13 +39,15 @@ class World(val w: Int, val h: Int) {
     val containers = HashMap<Int, MutableList<Stack>>()  // ключ — индекс клетки
     val dirtyTiles = HashSet<Int>()
     val dirtyCont = HashSet<Int>()
+    /** События смены клеток для анимаций: [индекс, было, стало] */
+    val events = ArrayList<IntArray>()
 
     fun idx(x: Int, y: Int) = y * w + x
     fun inside(x: Int, y: Int) = x in 0 until w && y in 0 until h
     fun t(x: Int, y: Int): Int = if (inside(x, y)) tiles[idx(x, y)].toInt() else T.WALL
     fun tAt(i: Int): Int = tiles[i].toInt()
     fun set(x: Int, y: Int, v: Int) { if (inside(x, y)) { tiles[idx(x, y)] = v.toByte() } }
-    fun setIdx(i: Int, v: Int) { tiles[i] = v.toByte(); dirtyTiles.add(i) }
+    fun setIdx(i: Int, v: Int) { events.add(intArrayOf(i, tiles[i].toInt(), v)); tiles[i] = v.toByte(); dirtyTiles.add(i) }
     fun barrAt(i: Int) = barr[i] ?: 0
 
     /** Клетка непроходима для движения */

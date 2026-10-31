@@ -33,6 +33,9 @@ object Items {
         ItemDef("water", "Бутылка воды", ItemKind.DRINK, 0.6f, 0xFF60A8E8.toInt(), thirst = 45f),
         ItemDef("soda", "Газировка", ItemKind.DRINK, 0.4f, 0xFFE04848.toInt(), thirst = 25f, hunger = 5f),
         ItemDef("bandage", "Бинт", ItemKind.MED, 0.1f, 0xFFF0F0F0.toInt(), heal = 8f, stopsBleeding = true),
+        ItemDef("rag", "Тряпка", ItemKind.MED, 0.1f, 0xFFB8A888.toInt()),
+        ItemDef("disinfectant", "Дезинфицирующее", ItemKind.MED, 0.3f, 0xFF40B060.toInt()),
+        ItemDef("tweezers", "Пинцет", ItemKind.MED, 0.05f, 0xFFB0B0B8.toInt()),
         ItemDef("pills", "Обезболивающее", ItemKind.MED, 0.1f, 0xFF80E080.toInt(), heal = 15f),
         ItemDef("knife", "Кухонный нож", ItemKind.MELEE, 0.4f, 0xFFC0C0C8.toInt(), dmg = 22f, range = 1.0f, cooldown = 0.4f, noise = 2f),
         ItemDef("bat", "Бейсбольная бита", ItemKind.MELEE, 1.5f, 0xFFB07840.toInt(), dmg = 38f, range = 1.3f, cooldown = 0.7f, noise = 4f),
@@ -50,10 +53,10 @@ object Items {
     class Loot(val id: String, val w: Int, val min: Int = 1, val max: Int = 1)
 
     val lootFridge = listOf(Loot("water", 5, 1, 2), Loot("soda", 5, 1, 2), Loot("apple", 4, 1, 3), Loot("bread", 3), Loot("canned", 2))
-    val lootCounter = listOf(Loot("canned", 5, 1, 2), Loot("chips", 4), Loot("knife", 3), Loot("bread", 2), Loot("water", 2))
-    val lootWardrobe = listOf(Loot("bat", 2), Loot("bandage", 3), Loot("planks", 2, 1, 2), Loot("hammer", 2), Loot("chips", 2))
+    val lootCounter = listOf(Loot("canned", 5, 1, 2), Loot("chips", 4), Loot("knife", 3), Loot("bread", 2), Loot("water", 2), Loot("disinfectant", 1), Loot("rag", 2))
+    val lootWardrobe = listOf(Loot("bat", 2), Loot("bandage", 2), Loot("rag", 5, 1, 3), Loot("planks", 2, 1, 2), Loot("hammer", 2), Loot("chips", 1))
     val lootShelf = listOf(Loot("chips", 4), Loot("canned", 3), Loot("hammer", 2), Loot("planks", 3, 1, 3), Loot("crowbar", 1), Loot("pills", 2))
-    val lootMed = listOf(Loot("bandage", 6, 1, 3), Loot("pills", 4, 1, 2))
+    val lootMed = listOf(Loot("bandage", 6, 1, 3), Loot("disinfectant", 4), Loot("tweezers", 3), Loot("pills", 3, 1, 2))
     val lootStore = listOf(Loot("canned", 6, 1, 3), Loot("chips", 6, 1, 3), Loot("water", 6, 1, 3), Loot("soda", 5, 1, 3), Loot("bread", 3, 1, 2))
     val lootPolice = listOf(Loot("pistol", 3), Loot("ammo", 6, 6, 15), Loot("bandage", 3, 1, 2), Loot("crowbar", 2))
 }

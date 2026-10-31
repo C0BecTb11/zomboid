@@ -18,7 +18,9 @@ class Player(var id: Int) {
     var hunger = 10f                   // 0 — сыт, 100 — смерть от голода
     var thirst = 10f
     var stamina = 100f
-    var bleeding = false
+    val body = Body()
+    val bleeding get() = body.bleeding
+    var lastCell = -1
     var infection = 0f                 // секунды с момента укуса, 0 — здоров
     var dead = false
     var kills = 0
@@ -72,6 +74,7 @@ sealed class Act {
     class Drop(val id: String) : Act()
     class Take(val cell: Int, val id: String) : Act()
     class Put(val cell: Int, val id: String) : Act()
+    class Treat(val part: Int, val what: String) : Act()
 }
 
 class Game(val seed: Long) {
@@ -192,6 +195,17 @@ class Game(val seed: Long) {
         if (p.stamina < 10f) speed *= 0.8f
         val cell = world.tAt(world.idx(floor(p.x).toInt().coerceIn(0, world.w - 1), floor(p.y).toInt().coerceIn(0, world.h - 1)))
         if (cell == T.WINDOW_BROKEN) speed *= 0.4f
+        speed *= p.body.legPenalty()
+        // перелез через разбитое окно — можно порезаться
+        val ci = world.idx(floor(p.x).toInt().coerceIn(0, world.w - 1), floor(p.y).toInt().coerceIn(0, world.h - 1))
+        if (ci != p.lastCell) {
+            if (cell == T.WINDOW_BROKEN && p.lastCell >= 0 && rnd.nextFloat() < 0.3f) {
+                val part = intArrayOf(BP.L_HAND, BP.R_HAND, BP.L_FORE, BP.R_FORE, BP.L_SHIN, BP.R_SHIN, BP.L_THIGH, BP.R_THIGH)[rnd.nextInt(8)]
+                wound(p, part, WT.GLASS)
+                msg(p.id, "Порезался о стекло: ${BP.names[part].lowercase()}")
+            }
+            p.lastCell = ci
+        }
         if (mag > 0.1f) {
             val nx = p.mx / maxOf(1f, mag); val ny = p.my / maxOf(1f, mag)
             p.fx = p.mx / mag; p.fy = p.my / mag
@@ -206,8 +220,8 @@ class Game(val seed: Long) {
         p.hunger = (p.hunger + dt * 0.035f).coerceAtMost(100f)
         p.thirst = (p.thirst + dt * 0.052f).coerceAtMost(100f)
         if (p.hunger >= 90f || p.thirst >= 90f) p.hp -= dt * 0.4f
-        else if (p.hunger < 60f && p.thirst < 60f && !p.bleeding && p.infection <= 0f) p.hp = (p.hp + dt * 0.08f).coerceAtMost(100f)
-        if (p.bleeding) p.hp -= dt * 0.35f
+        else if (p.hunger < 60f && p.thirst < 60f && !p.bleeding && p.infection <= 0f && !p.body.woundInfected) p.hp = (p.hp + dt * 0.08f).coerceAtMost(100f)
+        p.hp -= p.body.update(dt)
         if (p.infection > 0f) {
             p.infection += dt
             if (p.infection > 900f) p.hp -= dt * 0.25f
@@ -329,12 +343,23 @@ class Game(val seed: Long) {
     private fun attackPlayer(z: Zombie, p: Player) {
         z.attackCd = 1.3f
         if (rnd.nextFloat() > 0.55f) return
-        p.hp -= 6f + rnd.nextFloat() * 7f
+        val part = BP.randomZombieTarget(rnd)
+        val pname = BP.names[part].lowercase()
         val r = rnd.nextFloat()
         when {
-            r < 0.05f && p.infection <= 0f -> { p.infection = 0.01f; p.bleeding = true; msg(p.id, "Укус! Рана кровоточит") }
-            r < 0.30f && !p.bleeding -> { p.bleeding = true; msg(p.id, "Глубокая царапина — кровотечение") }
+            r < 0.45f -> { p.hp -= 3f + rnd.nextFloat() * 4f; p.body.parts[part].bruise = 120f; msg(p.id, "Ушиб: $pname") }
+            r < 0.75f -> { p.hp -= 5f; wound(p, part, WT.SCRATCH); msg(p.id, "Царапина: $pname") }
+            r < 0.90f -> { p.hp -= 8f; wound(p, part, WT.LACERATION); msg(p.id, "Рваная рана: $pname") }
+            else -> { p.hp -= 12f; wound(p, part, WT.BITE); msg(p.id, "УКУС: $pname!") }
         }
+    }
+
+    fun wound(p: Player, part: Int, type: Int) {
+        val w = Wound(type)
+        p.body.parts[part].wounds.add(w)
+        // кровотечение сквозь повязку пачкает её
+        p.body.parts[part].bandageAge += 60f
+        if (p.infection <= 0f && rnd.nextFloat() < WT.zombieInfect[type]) p.infection = 0.01f
     }
 
     private fun separate() {
@@ -363,6 +388,7 @@ class Game(val seed: Long) {
             is Act.Interact -> interact(p, a.cell)
             is Act.Barricade -> barricade(p, a.cell)
             is Act.Use -> use(p, a.id)
+            is Act.Treat -> treat(p, a.part, a.what)
             is Act.Drop -> {
                 val s = p.inv.firstOrNull { it.id == a.id } ?: return
                 p.inv.remove(s); if (p.eq == s.id) p.eq = null
@@ -424,7 +450,7 @@ class Game(val seed: Long) {
             val d = maxOf(hypot(tz.x - p.x, tz.y - p.y), 0.01f)
             p.fx = (tz.x - p.x) / d; p.fy = (tz.y - p.y) / d
             val weak = if (p.stamina < 10f) 0.6f else 1f
-            hitZombie(p, tz, w.dmg * weak * (0.8f + rnd.nextFloat() * 0.4f))
+            hitZombie(p, tz, w.dmg * weak * p.body.armPenalty() * (0.8f + rnd.nextFloat() * 0.4f))
             moveCircle(tz.x, tz.y, p.fx * 0.35f, p.fy * 0.35f, ZOMBIE_R) { x, y -> tz.x = x; tz.y = y }
             tz.stagger = 0.45f
         }
@@ -448,7 +474,13 @@ class Game(val seed: Long) {
                 val blocked = players.any { !it.dead && hypot(it.x - cx, it.y - cy) < 0.8f } || zombies.any { hypot(it.x - cx, it.y - cy) < 0.8f }
                 if (blocked) msg(p.id, "Что-то мешает закрыть") else { world.setIdx(cell, T.DOOR); noise(p.x, p.y, 3f, p) }
             }
-            t == T.WINDOW -> { world.setIdx(cell, T.WINDOW_BROKEN); world.tileHp.remove(cell); noise(p.x, p.y, 12f, p); msg(p.id, "Ты разбил окно") }
+            t == T.WINDOW -> {
+                world.setIdx(cell, T.WINDOW_BROKEN); world.tileHp.remove(cell); noise(p.x, p.y, 12f, p)
+                if (p.eq == null && rnd.nextFloat() < 0.5f) {
+                    val hand = if (rnd.nextBoolean()) BP.R_HAND else BP.R_FORE
+                    wound(p, hand, WT.GLASS); msg(p.id, "Разбил окно рукой — в ране стекло")
+                } else msg(p.id, "Ты разбил окно")
+            }
             T.isFurniture(t) || world.containers.containsKey(cell) -> world.openContainer(cell, rnd)
         }
     }
@@ -481,13 +513,58 @@ class Game(val seed: Long) {
                 p.hunger = (p.hunger - d.hunger).coerceIn(0f, 100f)
                 p.thirst = (p.thirst - d.thirst).coerceIn(0f, 100f)
             }
-            ItemKind.MED -> {
-                p.take(id)
-                p.hp = (p.hp + d.heal).coerceAtMost(100f)
-                if (d.stopsBleeding && p.bleeding) { p.bleeding = false; msg(p.id, "Рана перевязана") }
+            ItemKind.MED -> when (id) {
+                "bandage", "rag" -> {
+                    val part = (0 until BP.COUNT).sortedByDescending { needBandage(p.body.parts[it]) }.first()
+                    if (needBandage(p.body.parts[part]) <= 0) msg(p.id, "Перевязывать нечего") else treat(p, part, id)
+                }
+                "disinfectant" -> {
+                    val part = (0 until BP.COUNT).firstOrNull { k -> p.body.parts[k].wounds.any { !it.disinfected } }
+                    if (part == null) msg(p.id, "Нет ран для обработки") else treat(p, part, "disinfect")
+                }
+                "tweezers" -> {
+                    val part = (0 until BP.COUNT).firstOrNull { p.body.parts[it].hasGlass }
+                    if (part == null) msg(p.id, "Осколков нет") else treat(p, part, "glass")
+                }
+                else -> { p.take(id); p.hp = (p.hp + d.heal).coerceAtMost(100f); msg(p.id, "Стало легче") }
             }
             ItemKind.MELEE, ItemKind.GUN -> p.eq = if (p.eq == id) null else id
             else -> {}
+        }
+    }
+
+    private fun needBandage(bp: BodyPart): Int = when {
+        bp.bleeding -> 3
+        bp.wounds.isNotEmpty() && bp.bandage == 0 -> 2
+        bp.dirty && bp.wounds.isNotEmpty() -> 1
+        else -> 0
+    }
+
+    /** Лечение конкретной части тела: bandage, rag, unbandage, disinfect, glass */
+    fun treat(p: Player, part: Int, what: String) {
+        if (part !in 0 until BP.COUNT) return
+        val bp = p.body.parts[part]
+        val name = BP.names[part].lowercase()
+        when (what) {
+            "bandage", "rag" -> {
+                if (!p.take(what)) { msg(p.id, "Нет: ${Items.get(what).name}"); return }
+                if (bp.hasGlass) msg(p.id, "Сначала стоило достать стекло…")
+                bp.bandage = if (what == "bandage") 1 else 2; bp.bandageAge = 0f
+                msg(p.id, "Перевязано: $name")
+            }
+            "unbandage" -> { bp.bandage = 0; bp.bandageAge = 0f }
+            "disinfect" -> {
+                if (!p.take("disinfectant")) { msg(p.id, "Нужно дезинфицирующее средство"); return }
+                for (w in bp.wounds) { w.disinfected = true; w.infection = 0f }
+                p.hp = (p.hp - 1f).coerceAtLeast(1f)
+                msg(p.id, "Рана обработана: $name. Щиплет!")
+            }
+            "glass" -> {
+                if (p.count("tweezers") <= 0) { msg(p.id, "Нужен пинцет"); return }
+                val w = bp.wounds.firstOrNull { it.glass } ?: return
+                w.glass = false; w.bleed = maxOf(w.bleed, 30f)
+                msg(p.id, "Осколок извлечён: $name")
+            }
         }
     }
 
@@ -531,7 +608,7 @@ class Game(val seed: Long) {
     fun playerJson(p: Player): JSONObject = JSONObject().apply {
         put("id", p.id); put("x", r2(p.x)); put("y", r2(p.y)); put("fx", r2(p.fx)); put("fy", r2(p.fy))
         put("hp", r2(p.hp)); put("hu", r2(p.hunger)); put("th", r2(p.thirst)); put("st", r2(p.stamina))
-        put("bl", p.bleeding); put("inf", r2(p.infection)); put("dead", p.dead); put("k", p.kills)
+        put("body", p.body.toJson()); put("inf", r2(p.infection)); put("dead", p.dead); put("k", p.kills)
         put("eq", p.eq ?: ""); put("inv", invJson(p.inv)); put("aa", r2(p.attackAnim)); put("con", p.connected)
     }
 
@@ -539,7 +616,7 @@ class Game(val seed: Long) {
         p.x = o.getDouble("x").toFloat(); p.y = o.getDouble("y").toFloat()
         p.fx = o.getDouble("fx").toFloat(); p.fy = o.getDouble("fy").toFloat()
         p.hp = o.getDouble("hp").toFloat(); p.hunger = o.getDouble("hu").toFloat(); p.thirst = o.getDouble("th").toFloat()
-        p.stamina = o.getDouble("st").toFloat(); p.bleeding = o.getBoolean("bl"); p.infection = o.getDouble("inf").toFloat()
+        p.stamina = o.getDouble("st").toFloat(); p.body.fromJson(o.optJSONArray("body")); p.infection = o.getDouble("inf").toFloat()
         p.dead = o.getBoolean("dead"); p.kills = o.optInt("k"); p.eq = o.optString("eq").ifEmpty { null }
         invFrom(o.optJSONArray("inv"), p.inv); p.attackAnim = o.optDouble("aa", 0.0).toFloat()
         p.connected = o.optBoolean("con", true)
@@ -628,7 +705,9 @@ class Game(val seed: Long) {
         zombies.clear(); zombies.addAll(next)
         o.optJSONArray("tc")?.let { for (i in 0 until it.length()) {
             val e = it.getJSONArray(i); val idx = e.getInt(0)
-            world.tiles[idx] = e.getInt(1).toByte()
+            val nt = e.getInt(1)
+            if (world.tAt(idx) != nt) world.events.add(intArrayOf(idx, world.tAt(idx), nt))
+            world.tiles[idx] = nt.toByte()
             val b = e.getInt(2); if (b > 0) world.barr[idx] = b else world.barr.remove(idx)
         } }
         o.optJSONObject("cc")?.let { co -> for (k in co.keys()) { val l = ArrayList<Stack>(); invFrom(co.getJSONArray(k), l); world.containers[k.toInt()] = l } }
