@@ -259,7 +259,8 @@ void main() {
     }
     vec3 c = col * light;
     float v = texture(uVis, vPos.xz / 100.0).r;
-    c *= mix(0.32, 1.0, v);
+    if (vPos.y > 2.35) v = max(v, 0.8);
+    c *= mix(0.45 - 0.2 * uNight, 1.0, v);
     float fd = length(vPos - uCamPos);
     c = mix(c, uFogCol, clamp((fd - 22.0) / 26.0, 0.0, 0.75));
     frag = vec4(c, 1.0);

@@ -270,9 +270,9 @@ class Scene3D {
 
         // ---------- камера ----------
         val aspect = vw.toFloat() / max(1, vh)
-        Matrix.perspectiveM(proj, 0, 30f, aspect, 1f, 140f)
+        Matrix.perspectiveM(proj, 0, 32f, aspect, 1f, 140f)
         val pitch = Math.toRadians(54.0); val yaw = Math.toRadians(camYaw.toDouble())
-        val D = 21f
+        val D = 15.5f
         val sh = shake * shake * 0.25f
         val tx = camX + (rnd.nextFloat() - 0.5f) * sh; val tz = camZ + (rnd.nextFloat() - 0.5f) * sh; val ty = 0.6f
         eye[0] = tx + (sin(yaw) * cos(pitch) * D).toFloat(); eye[1] = ty + (sin(pitch) * D).toFloat(); eye[2] = tz + (cos(yaw) * cos(pitch) * D).toFloat()
@@ -290,12 +290,12 @@ class Scene3D {
         } else { sun[0] = 0.35f; sun[1] = -0.85f; sun[2] = -0.4f }
         norm(sun)
         val dayC = floatArrayOf(1.0f, 0.95f, 0.86f); val duskC = floatArrayOf(1.0f, 0.6f, 0.36f); val nightC = floatArrayOf(0.42f, 0.52f, 0.85f)
-        val dayA = floatArrayOf(0.44f, 0.47f, 0.54f); val duskA = floatArrayOf(0.34f, 0.28f, 0.33f); val nightA = floatArrayOf(0.05f, 0.065f, 0.12f)
+        val dayA = floatArrayOf(0.56f, 0.59f, 0.66f); val duskA = floatArrayOf(0.34f, 0.28f, 0.33f); val nightA = floatArrayOf(0.05f, 0.065f, 0.12f)
         val warm = if (h in 5.5f..20.5f) { val el = sin(Math.PI * (h - 6.0) / 14.0).toFloat().coerceAtLeast(0f); ((1f - el) * (1f - el) * (1f - el)).coerceIn(0f, 1f) * 0.6f } else 0f
         for (i in 0..2) {
             if (dark < 0.5f) {
                 val k = max(dark * 2f, warm)
-                sunCol[i] = mix(dayC[i] * 0.85f, duskC[i] * 0.7f, k); amb[i] = mix(dayA[i], duskA[i], k)
+                sunCol[i] = mix(dayC[i] * 1.0f, duskC[i] * 0.75f, k); amb[i] = mix(dayA[i], duskA[i], k)
             } else {
                 val k = (dark - 0.5f) * 2f
                 sunCol[i] = mix(duskC[i] * 0.7f, nightC[i] * 0.17f, k); amb[i] = mix(duskA[i], nightA[i], k)
