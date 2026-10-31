@@ -3,9 +3,15 @@
 mkdir -p shots
 adb install -r apk/zomboid.apk
 adb shell settings put system accelerometer_rotation 0
+adb shell settings put secure immersive_mode_confirmations confirmed
+# дать лаунчеру эмулятора «проснуться», чтобы не было окна «не отвечает»
+sleep 45
+adb shell am broadcast -a android.intent.action.CLOSE_SYSTEM_DIALOGS
 adb logcat -c
 adb shell am start -W -n com.c0bectb11.zomboid/com.godot.game.GodotApp | tee shots/start.txt
 sleep 20
+adb shell am broadcast -a android.intent.action.CLOSE_SYSTEM_DIALOGS
+sleep 2
 adb shell dumpsys activity activities | grep -E "topResumedActivity" | tee shots/top.txt
 adb exec-out screencap -p > shots/android_menu.png
 adb shell wm size | tee -a shots/top.txt
