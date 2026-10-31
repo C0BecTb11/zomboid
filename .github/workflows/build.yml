@@ -21,8 +21,16 @@ jobs:
       - name: Build
         run: |
           chmod +x gradlew
-          ./gradlew --no-daemon assembleRelease
+          set -o pipefail
+          ./gradlew --no-daemon assembleRelease 2>&1 | tee build.log
           cp app/build/outputs/apk/release/app-release.apk zomboid.apk
+      - name: Push build log on failure
+        if: failure()
+        run: |
+          mkdir logout && grep -E "^e: |error:|What went wrong|^w: " -A3 build.log > logout/errors.txt || true
+          tail -200 build.log > logout/tail.txt
+          cd logout && git init -q -b buildlog && git config user.name gha && git config user.email gha@users.noreply.github.com
+          git add -A && git commit -qm log && git push -f "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}.git" buildlog
       - uses: actions/upload-artifact@v4
         with:
           name: zomboid-apk
