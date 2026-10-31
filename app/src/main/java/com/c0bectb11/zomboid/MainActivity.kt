@@ -21,6 +21,15 @@ import android.widget.TextView
 
 class MainActivity : Activity() {
     private var gameView: GameView? = null
+    private var glView: Game3DView? = null
+
+    private fun launch(v: GameView) {
+        val gl = Game3DView(this, v)
+        val root = android.widget.FrameLayout(this)
+        root.addView(gl); root.addView(v)
+        gameView = v; glView = gl
+        setContentView(root)
+    }
     private var net: Net? = null
     private val dp get() = resources.displayMetrics.density
 
@@ -34,7 +43,7 @@ class MainActivity : Activity() {
         if (demo != null) {
             val v = GameView(this, Mode.SOLO, Demo.create(demo), null) { del -> onExit(del) }
             v.demoPanel = demo
-            gameView = v; setContentView(v)
+            launch(v)
             return
         }
         showMenu()
@@ -71,6 +80,7 @@ class MainActivity : Activity() {
     }
 
     private fun showMenu() {
+        glView?.onPause(); glView = null
         gameView = null
         net?.close(); net = null
         val col = LinearLayout(this).apply {
@@ -130,7 +140,7 @@ class MainActivity : Activity() {
         val g = loaded ?: Game.newGame(System.currentTimeMillis())
         g.players.filter { it.id != 0 }.forEach { it.connected = false }
         val v = GameView(this, Mode.SOLO, g, null) { del -> onExit(del) }
-        gameView = v; setContentView(v)
+        launch(v)
     }
 
     private fun startHost() {
@@ -138,13 +148,13 @@ class MainActivity : Activity() {
         g.players.filter { it.id != 0 }.forEach { it.connected = false }
         val n = Net(); n.host(); net = n
         val v = GameView(this, Mode.HOST, g, n) { del -> onExit(del) }
-        gameView = v; setContentView(v)
+        launch(v)
     }
 
     private fun startClient(ip: String) {
         val n = Net(); n.join(ip); net = n
         val v = GameView(this, Mode.CLIENT, null, n) { del -> onExit(del) }
-        gameView = v; setContentView(v)
+        launch(v)
     }
 
     @Deprecated("Deprecated in Java")
@@ -160,8 +170,14 @@ class MainActivity : Activity() {
         }
     }
 
+    override fun onResume() {
+        super.onResume()
+        glView?.onResume()
+    }
+
     override fun onPause() {
         super.onPause()
+        glView?.onPause()
         gameView?.saveNow()
     }
 

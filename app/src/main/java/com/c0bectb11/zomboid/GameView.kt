@@ -10,8 +10,7 @@ import android.graphics.RectF
 import android.graphics.Shader
 import android.os.Build
 import android.view.MotionEvent
-import android.view.SurfaceHolder
-import android.view.SurfaceView
+import android.view.View
 import org.json.JSONObject
 import java.util.concurrent.ConcurrentLinkedQueue
 import kotlin.math.atan2
@@ -32,10 +31,12 @@ class GameView(
     private var game: Game?,
     private val net: Net?,
     private val onExit: (deleteSave: Boolean) -> Unit,
-) : SurfaceView(ctx), SurfaceHolder.Callback, Runnable {
+) : View(ctx) {
 
-    private var thread: Thread? = null
-    @Volatile private var running = false
+    /** Общий замок: логика (поток GL) и отрисовка интерфейса (UI-поток) */
+    val lock = Any()
+    val scene = Scene3D()
+    private var camPid = -1; private var camLastX = 0f
     private var localPid = if (mode == Mode.CLIENT) 1 else 0
     private val dp = resources.displayMetrics.density
     private var W = 1f; private var H = 1f
@@ -78,13 +79,11 @@ class GameView(
     private val pText = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.WHITE; textSize = 14f * resources.displayMetrics.density }
     private val pDark = Paint()
     private val rect = RectF()
-    private val wr = WorldRenderer(ctx, resources.displayMetrics.density)
     private val vib = ctx.getSystemService(Context.VIBRATOR_SERVICE) as? android.os.Vibrator
     private var lootWait = 0f
     private var insetR = 0f
 
     init {
-        holder.addCallback(this)
         isFocusable = true
     }
 
@@ -102,22 +101,9 @@ class GameView(
         }
 
     // ================== ЖИЗНЕННЫЙ ЦИКЛ ==================
-    override fun surfaceCreated(h: SurfaceHolder) { start() }
-    override fun surfaceChanged(h: SurfaceHolder, f: Int, w: Int, hh: Int) { W = w.toFloat(); H = hh.toFloat() }
-    override fun surfaceDestroyed(h: SurfaceHolder) { stop() }
+    override fun onSizeChanged(w: Int, h: Int, ow: Int, oh: Int) { W = w.toFloat(); H = h.toFloat() }
 
-    fun start() {
-        if (running) return
-        running = true
-        thread = Thread(this, "game").apply { start() }
-    }
-
-    fun stop() {
-        running = false
-        try { thread?.join(1500) } catch (_: InterruptedException) {}
-        thread = null
-        saveNow()
-    }
+    fun stop() { saveNow() }
 
     fun saveNow() {
         val gm = game ?: return
@@ -126,26 +112,26 @@ class GameView(
         synchronized(gm) { Saves.save(context, gm) }
     }
 
-    override fun run() {
-        var last = System.nanoTime()
-        while (running) {
-            val now = System.nanoTime()
-            val dt = min((now - last) / 1e9f, 0.05f)
-            last = now
-            try {
-                synchronized(this) { tick(dt) }
-                draw()
-            } catch (e: Exception) {
-                android.util.Log.e("zomboid", "loop", e)
-            }
-            if (exitRequested) {
-                exitRequested = false
-                running = false
-                post { finishGame() }
-            }
-            val spent = (System.nanoTime() - now) / 1_000_000
-            if (spent < 16) try { Thread.sleep(16 - spent) } catch (_: InterruptedException) {}
+    /** Кадр логики — вызывается из потока OpenGL */
+    fun frame(dt: Float) {
+        try { synchronized(lock) { tick(dt) } } catch (e: Exception) { android.util.Log.e("zomboid", "tick", e) }
+        if (exitRequested) { exitRequested = false; post { finishGame() } }
+        postInvalidateOnAnimation()
+    }
+
+    /** 3D-отрисовка — из потока OpenGL */
+    fun renderGL() {
+        synchronized(lock) {
+            val gm = g() ?: return
+            val me = gm.player(localPid) ?: return
+            scene.render(gm, me)
         }
+    }
+
+    fun hasWorld(): Boolean = g() != null
+
+    override fun onDraw(c: Canvas) {
+        synchronized(lock) { try { render(c) } catch (e: Exception) { android.util.Log.e("zomboid", "hud", e) } }
     }
 
     private var deleteOnExit = false
@@ -168,6 +154,7 @@ class GameView(
             val r = 60 * dp
             mx = ((joyX - joyBX) / r).coerceIn(-1f, 1f); my = ((joyY - joyBY) / r).coerceIn(-1f, 1f)
             if (hypot(mx, my) < 0.15f) { mx = 0f; my = 0f }
+            val wd = scene.screenToWorld(mx, my); mx = wd[0]; my = wd[1]
         }
         val run = runPid >= 0 || runToggle
         if (attackPid >= 0) {
@@ -213,9 +200,13 @@ class GameView(
             }
         }
         // анимации, свет, камера
-        if (me != null) wr.update(dt, gm, me, localPid)
-        if (wr.vibrate > 0) {
-            val ms = wr.vibrate.toLong(); wr.vibrate = 0
+        if (me != null) {
+            scene.update(dt, gm, me, localPid)
+            curTarget = gm.findInteract(me); barrCell = gm.findBarricade(me)
+            scene.target = curTarget
+        }
+        if (scene.vibrate > 0) {
+            val ms = scene.vibrate.toLong(); scene.vibrate = 0
             try {
                 if (Build.VERSION.SDK_INT >= 26) vib?.vibrate(android.os.VibrationEffect.createOneShot(ms, android.os.VibrationEffect.DEFAULT_AMPLITUDE))
                 else @Suppress("DEPRECATION") vib?.vibrate(ms)
@@ -328,7 +319,7 @@ class GameView(
         bInv.x = W - 104 * dp; bInv.y = 40 * dp; bInv.r = 26 * dp
     }
 
-    private fun releaseControls() { joyPid = -1; runPid = -1; attackPid = -1 }
+    private fun releaseControls() { joyPid = -1; runPid = -1; attackPid = -1; camPid = -1 }
 
     private fun handleTouch(t: Touch) {
         val gm = g()
@@ -367,9 +358,14 @@ class GameView(
                 }
                 bAttack.hit(t.x, t.y) -> { attackPid = t.pid; attackRepeat = 0f }
                 t.x < W * 0.55f && joyPid < 0 -> { joyPid = t.pid; joyBX = t.x; joyBY = t.y; joyX = t.x; joyY = t.y }
+                camPid < 0 -> { camPid = t.pid; camLastX = t.x }
             }
-            1 -> if (t.pid == joyPid) { joyX = t.x; joyY = t.y }
+            1 -> {
+                if (t.pid == joyPid) { joyX = t.x; joyY = t.y }
+                if (t.pid == camPid) { scene.camYaw = (scene.camYaw - (t.x - camLastX) * 0.25f) % 360f; camLastX = t.x }
+            }
             2 -> {
+                if (t.pid == camPid) camPid = -1
                 if (t.pid == joyPid) joyPid = -1
                 if (t.pid == attackPid) attackPid = -1
                 if (t.pid == runPid) runPid = -1
@@ -462,24 +458,12 @@ class GameView(
 
     // ================== ОТРИСОВКА ==================
     private var barrCell = -1
-
-    private fun draw() {
-        val h = holder
-        val c: Canvas = try {
-            (if (Build.VERSION.SDK_INT >= 26) h.lockHardwareCanvas() else h.lockCanvas()) ?: return
-        } catch (e: Exception) { return }
-        try {
-            synchronized(this) { render(c) }
-        } finally {
-            try { h.unlockCanvasAndPost(c) } catch (_: Exception) {}
-        }
-    }
+    private var curTarget = -1
 
     private fun render(c: Canvas) {
-        W = c.width.toFloat(); H = c.height.toFloat()
-        c.drawColor(Color.BLACK)
         val gm = g()
         if (gm == null) {
+            c.drawColor(0xFF101214.toInt())
             pText.textSize = 18 * dp; pText.textAlign = Paint.Align.CENTER
             c.drawText(if (lost) "Соединение потеряно — коснись экрана" else (net?.status ?: "Загрузка…"), W / 2, H / 2, pText)
             pText.textAlign = Paint.Align.LEFT
@@ -491,9 +475,8 @@ class GameView(
             hudL = 14 * dp + (cut?.safeInsetLeft ?: 0)
             insetR = (cut?.safeInsetRight ?: 0).toFloat()
         } else hudL = 14 * dp
-        val target = gm.findInteract(me)
-        wr.draw(c, gm, me, W, H, target)
-        barrCell = gm.findBarricade(me)
+        val target = curTarget
+        drawOverlays(c, gm, me)
 
         drawHud(c, gm, me, target)
         when (panel) {
@@ -676,7 +659,7 @@ class GameView(
             pFill.color = 0xB0FFFFFF.toInt(); c.drawCircle(joyBX + dx * k, joyBY + dy * k, 24 * dp, pFill)
         } else {
             pText.textSize = 11 * dp; pText.color = 0x77FFFFFF
-            c.drawText("Слева — ходьба. Чуть сдвинь — красться", hudL, H - 16 * dp, pText); pText.color = Color.WHITE
+            c.drawText("Слева — ходьба (чуть сдвинь — красться). Свайп справа — поворот камеры", hudL, H - 16 * dp, pText); pText.color = Color.WHITE
         }
         // кнопки
         val w = me.weapon()
@@ -747,6 +730,35 @@ class GameView(
             c.drawText(s.def.name + if (s.n > 1) " ×${s.n}" else "", col.left + 36 * dp, top + rowH / 2 + 5 * dp, pText)
         }
         c.restore()
+    }
+
+    private val pVig = Paint()
+    private var vigW = 0f
+
+    /** Поверх 3D: прогресс действий, виньетка, вспышка боли */
+    private fun drawOverlays(c: Canvas, gm: Game, me: Player) {
+        for (p in gm.players) {
+            if (p.dead || !p.connected || p.taAct == null) continue
+            val s = scene.project(p.rx, 2.1f, p.ry) ?: continue
+            val r = 16 * dp
+            pFill.color = 0xAA101214.toInt(); c.drawCircle(s[0], s[1], r + 4 * dp, pFill)
+            pLine.color = 0xFFF0E0A0.toInt(); pLine.strokeWidth = 4 * dp
+            rect.set(s[0] - r, s[1] - r, s[0] + r, s[1] + r); c.drawArc(rect, -90f, 360f * p.taProgress, false, pLine)
+            pText.textAlign = Paint.Align.CENTER; pText.textSize = 11 * dp; pText.color = Color.WHITE
+            pText.setShadowLayer(3 * dp, 0f, 1 * dp, Color.BLACK); c.drawText(p.taName, s[0], s[1] - r - 9 * dp, pText); pText.clearShadowLayer()
+            pText.textAlign = Paint.Align.LEFT
+        }
+        if (vigW != W) {
+            vigW = W
+            pVig.shader = RadialGradient(W / 2, H / 2, hypot(W, H) / 2, intArrayOf(0x00000000, 0x00000000, 0x70000000), floatArrayOf(0f, 0.6f, 1f), Shader.TileMode.CLAMP)
+        }
+        c.drawRect(0f, 0f, W, H, pVig)
+        val low = if (me.hp < 30f && !me.dead) (0.35f + 0.25f * sin(System.currentTimeMillis() / 220f)) * (1f - me.hp / 30f) else 0f
+        val hf = max(scene.hurtFlash, low)
+        if (hf > 0.01f) {
+            pDark.shader = RadialGradient(W / 2, H / 2, hypot(W, H) / 2, intArrayOf(0x00000000, Color.argb((hf * 170).toInt(), 160, 0, 0)), floatArrayOf(0.35f, 1f), Shader.TileMode.CLAMP)
+            c.drawRect(0f, 0f, W, H, pDark); pDark.shader = null
+        }
     }
 
     private fun mostHurt(me: Player): Int {
